@@ -1,0 +1,48 @@
+import streamlit as st
+import fitz  # PyMuPDF
+
+# PDF 파일 경로
+pdf_path = "streamlit/doc/test.pdf"
+
+# PDF 문서 열기
+doc = fitz.open(pdf_path)
+
+# 초기 세션 상태 설정
+if 'page_number' not in st.session_state:
+    st.session_state.page_number = 0
+    st.session_state.rotation = 0  # 페이지 회전 상태 추가
+
+# Streamlit 앱 타이틀
+st.title("PDF Viewer with Page Rotation")
+
+# 사이드바 UI
+with st.sidebar:
+    st.write("## Navigation")
+    if st.button("Rotate 90°"):
+        st.session_state.rotation = (st.session_state.rotation + 90) % 360
+    if st.button("Rotate -90°"):
+        st.session_state.rotation = (st.session_state.rotation - 90) % 360
+
+# 페이지 이동 및 회전 버튼
+col1, col2, col3 = st.columns(3)
+with col1:
+    if st.button('Previous Page'):
+        st.session_state.page_number = max(0, st.session_state.page_number - 1)
+with col2:
+    if st.button('Next Page'):
+        st.session_state.page_number = min(len(doc) - 1, st.session_state.page_number + 1)
+with col3:
+    st.write(" ")  # 버튼 간 간격 조정용
+
+# 현재 페이지 로드 및 표시
+current_page_number = st.session_state.page_number
+page = doc.load_page(current_page_number)
+
+# 회전 적용
+rotation_matrix = fitz.Matrix(fitz.Identity).preRotate(st.session_state.rotation)
+pix = page.get_pixmap(matrix=rotation_matrix)  # 회전된 이미지 생성
+
+image_bytes = pix.tobytes("png")
+st.image(image_bytes, caption=f"Page {current_page_number + 1}", use_column_width=True)
+
+doc.close()
