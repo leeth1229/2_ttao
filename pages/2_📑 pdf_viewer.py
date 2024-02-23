@@ -1,6 +1,5 @@
 import streamlit as st
 import fitz  # PyMuPDF
-import re
 import streamlit_antd_components as sac
 import os
 
@@ -10,7 +9,7 @@ st.set_page_config(
     page_icon="📑",
 )
 # PDF 파일 경로
-file_name = "streamlit/doc/pdf"
+file_name = "streamlit/docs/pdf"
 pdf_list = os.listdir(file_name)
 pdf_name = st.sidebar.selectbox("PDF 선택", pdf_list)
 pdf_path = file_name + "/" + pdf_name
@@ -53,11 +52,19 @@ def convert_outlines_to_tree(outlines, parent_level=1):
 tree_items = convert_outlines_to_tree(outlines)
 
 # 초기 세션 상태 설정
-
+title = "PURPOSE"
 if 'title' not in st.session_state:
     st.session_state.title = "PURPOSE"
+    
+page_number = 0
 if 'page_number' not in st.session_state:
     st.session_state.page_number = 0
+    
+page_number_new = 0
+if 'page_number_new' not in st.session_state:
+    st.session_state.page_number_new = 0
+
+rotation = 0
 if 'rotation' not in st.session_state:
     st.session_state.rotation = 0
 
@@ -71,17 +78,24 @@ with st.sidebar:
     page_input = st.text_input("Enter page number:",placeholder = "clearing for page-move", value="", key="input")
     if page_input:
         try:
-            page_number = int(page_input) - 1  # 사용자 입력을 페이지 번호로 변환 (0 기반 인덱싱)
+            page_ = int(page_input) - 1 # 사용자 입력을 페이지 번호로 변환 (0 기반 인덱싱)
             if 0 <= page_number < len(doc):
-                st.session_state.page_number = page_number
-                
+                st.session_state.page_number = page_
             else:
                 st.error("Page number out of range.")
         except ValueError:
             st.error("Please enter a valid page number.")
     
+    # 페이지 회전 버튼
+    if st.button("Rotate -90° :arrow_right_hook:"):
+        st.session_state.rotation -= 90
+    # 페이지 회전 버튼
+    if st.button("Rotate 90° :leftwards_arrow_with_hook:"):
+        st.session_state.rotation += 90
+    
     # 아웃라인 네비게이션
     st.write("## Navigation")
+    
     # Use the tree_items in your sac.tree
     title = sac.tree(
         items=tree_items,
@@ -90,12 +104,13 @@ with st.sidebar:
         size='md',
         checkbox_strict=True
     )
-
-    if title and isinstance(title, str) == False:
+    
+    # 현재 페이지 타이틀 표기
+    if title and isinstance(title, str) == False: # 타이틀이 리스트로 표기되면
         st.session_state.title = title[0]
         st.write(st.session_state.title)
     else: 
-        st.session_state.title = title
+        st.session_state.title = title # 타이틀이 문자열이면
         st.write(st.session_state.title)
 
     # Initialize a variable to hold the page number
@@ -103,42 +118,27 @@ with st.sidebar:
         # Search for the title in the list of dictionaries
         for unique_dict in unique_key:
             if st.session_state.title in unique_dict:
-                page_number = unique_dict[st.session_state.title]
+                page_number_new = unique_dict[st.session_state.title]
                 break  # Exit the loop once the title is found
-        st.session_state.page_number = page_number
-        
-
-col1, col2 = st.columns(2)
-with col1:
-    # 페이지 이동 버튼
-    if st.button('Previous Page'):
-        st.session_state.page_number = max(0, st.session_state.page_number - 1)
-        for unique_dict in unique_key:
-            if st.session_state.page_number in unique_dict:
-                title = unique_dict[st.session_state.page_number]
-                break  # Exit the loop once the title is found
-        st.session_state.page_number = page_number
-
-    # 페이지 회전 버튼
-    if st.button("Rotate -90° :arrow_right_hook:"):
-        st.session_state.rotation -= 90
+        if st.session_state.page_number_new != page_number_new: #값이 변경 되면 
+            st.session_state.page_number_new = page_number_new
+            st.session_state.page_number = st.session_state.page_number_new - 1
     
-with col2:
+col1, col2 = st.columns(2)
+with col1:# 페이지 이동 버튼
+    if st.button('Previous Page'):
+        page_number_ = st.session_state.page_number - 1
+        st.session_state.page_number = max(0, page_number_)
+        # st.write(st.session_state.page_number+1)
+        
+with col2: # 페이지 이동 버튼
     if st.button('Next Page'):
-        st.session_state.page_number = min(len(doc) - 1, st.session_state.page_number + 1)
-        for unique_dict in unique_key:
-            if st.session_state.page_number in unique_dict:
-                title = unique_dict[st.session_state.page_number]
-                break  # Exit the loop once the title is found
-        st.session_state.page_number = page_number
-
-    # 페이지 회전 버튼
-    if st.button("Rotate 90° :leftwards_arrow_with_hook:"):
-        st.session_state.rotation += 90
-
+        page_number_ = st.session_state.page_number + 1
+        st.session_state.page_number = min(len(doc) - 1, page_number_)
+        # st.write(st.session_state.page_number+1)
+    
 # 현재 페이지 로드 및 표시
-# 현재 및 다음 페이지 로드 및 표시
-if page_number is not None:
+if st.session_state.page_number is not None:
     current_page_number = st.session_state.page_number
     pages_to_show = [current_page_number]
     if current_page_number < len(doc) - 1:  # 다음 페이지가 존재하는 경우 추가
@@ -148,6 +148,7 @@ if page_number is not None:
 scaling_matrix = fitz.Matrix(2.0, 2.0)  # 너비와 높이를 2배로 확장
 rotation_matrix = scaling_matrix.prerotate(st.session_state.rotation)
 
+# 페이지 보이기
 cols = st.columns(len(pages_to_show))
 for idx, page_num in enumerate(pages_to_show):
     page = doc.load_page(page_num)
@@ -156,4 +157,6 @@ for idx, page_num in enumerate(pages_to_show):
     image_bytes = pix.tobytes("png")
     cols[idx].image(image_bytes, caption=f"Page {page_num + 1}", use_column_width=True)
 
-doc.close()
+
+
+        
