@@ -157,7 +157,6 @@ if edited_df_materail is not None:
 if st.button('Add to cart'):
     df_materail_cart = add_to_cart(df_materail)
     st.session_state.Cart_dataframe = pd.concat([st.session_state.Cart_dataframe, df_materail_cart]).reset_index(drop=True)
-    st.session_state.Cart_dataframe = st.session_state.Cart_dataframe.drop_duplicates(subset=['자재코드'], keep='last')
     st.success('Add to cart!')
 
 # 초기화
@@ -175,7 +174,6 @@ if edited_df_materail_pro is not None:
 if st.button('Add to cart.'):
     df_materail_cart = add_to_cart(df_materail_pro)
     st.session_state.Cart_dataframe = pd.concat([st.session_state.Cart_dataframe, df_materail_cart]).reset_index(drop=True)
-    st.session_state.Cart_dataframe = st.session_state.Cart_dataframe.drop_duplicates(subset=['자재코드'], keep='last')
     st.success('Add to cart!')
 
 # 장바구니 타이틀 추가
@@ -186,14 +184,10 @@ if st.button('Reset Cart'):
     df_materail_cart = pd.DataFrame()
     st.session_state.Cart_dataframe = pd.DataFrame()
 
-# # Selection Remove 버튼
-# if st.button('Selection Remove from Cart'):
-#     # 선택한 제품을 Cart_dataframe에서 삭제합니다.
-#     selected_products = st.session_state.Cart_dataframe[st.session_state.Cart_dataframe['bool']]
-#     if not selected_products.empty:
-#         st.session_state.Cart_dataframe = st.session_state.Cart_dataframe.drop(selected_products.index, axis=0)
-#     else:
-#         st.warning('제품을 선택해주세요.')
+# 카트 중복 제거 버튼
+if st.button('Drop duplicates'):
+    st.session_state.Cart_dataframe = st.session_state.Cart_dataframe.drop_duplicates(subset=['자재코드'], keep='last')
+    st.success('Drop duplicates in Cart!')
 
 # Display the cart dataframe
 edited_cart_df_materail = st.data_editor(st.session_state.Cart_dataframe, num_rows="dynamic",key='cart_editor', use_container_width=True) #####################
@@ -204,10 +198,6 @@ if edited_cart_df_materail is not None:
 with open("cart_list.xlsx", 'rb') as my_file:
     st.session_state.Cart_dataframe.to_excel('cart_list.xlsx', index=False)
     st.download_button(label = 'Download Cart :white_check_mark:', data = my_file, file_name = 'cart_list.xlsx', mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-
-# if st.button('Download Cart'):
-#     st.session_state.Cart_dataframe.to_excel('cart_list.xlsx', index=False)
-#     st.success('Downloaded cart_list.xlsx')
 
 # 초기화
 if 'df_materail_bulk_list' not in st.session_state:
