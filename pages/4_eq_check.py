@@ -226,6 +226,7 @@ if st.button('데이터 저장'):
 if st.button('Add to cart'):
     df_materail_cart = add_to_cart(edited_df_boom_list)
     st.session_state.Cart_dataframe = pd.concat([st.session_state.Cart_dataframe, df_materail_cart]).reset_index(drop=True)
+    st.session_state.Cart_dataframe = st.session_state.Cart_dataframe.drop_duplicates(subset=['자재코드'], keep='last')
     st.success('Add to cart!')
 
 # Download Excel 버튼
