@@ -503,7 +503,10 @@ def Ai_search_ITEM_data_(df,search_term):
 def add_to_cart(df):
     global df_cart
     # 체크된 상품만 장바구니에 추가
-    df_cart =+ df[df['bool'] == True]
+    if 'df_cart' not in locals() or 'df_cart' not in globals():
+        df_cart = pd.DataFrame(columns=df.columns)  # 또는 필요한 열 구조를 지정
+    df_cart = pd.concat([df_cart, df[df['bool'] == True]], ignore_index=True)
+
     # 중복 제거
     df_cart = df_cart.drop_duplicates(subset=['자재코드'], keep='last')
     return df_cart
