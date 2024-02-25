@@ -31,7 +31,6 @@ with tempfile.TemporaryDirectory() as temp_dir:
                     f.write(data)
     model = SentenceTransformer(temp_dir)
 
-################ 모델 Load ########################
 
 def load_data():
     # df = dataiku.Dataset("vmi_r6")
@@ -41,6 +40,8 @@ def load_data():
     df = vmi_processing(df)
     df = df.astype(str)
     return df
+    
+################ 모델 Load ########################
 
 def sentence_processing_ai(sentence):
     sentence_ = re.sub(" ",",",sentence.upper())
@@ -239,20 +240,20 @@ def embedding_rank(df, sentence):
 
 ###################################################
 
-def auto_size_columns(sheet):
-    for column in sheet.columns:
-        max_length = 0
-        column_letter = get_column_letter(column[0].column)  # Get column letter
+# def auto_size_columns(sheet):
+#     for column in sheet.columns:
+#         max_length = 0
+#         column_letter = get_column_letter(column[0].column)  # Get column letter
 
-        for cell in column:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(cell.value)
-            except:
-                pass
+#         for cell in column:
+#             try:
+#                 if len(str(cell.value)) > max_length:
+#                     max_length = len(cell.value)
+#             except:
+#                 pass
 
-        adjusted_width = (max_length + 2)  # Adjust as needed
-        sheet.column_dimensions[column_letter].width = adjusted_width
+#         adjusted_width = (max_length + 2)  # Adjust as needed
+#         sheet.column_dimensions[column_letter].width = adjusted_width
 
 def modify_item_column(df_dataset_pd):
     # "ITEM" 열 수정
@@ -506,7 +507,6 @@ def add_to_cart(df):
     if 'df_cart' not in locals() or 'df_cart' not in globals():
         df_cart = pd.DataFrame(columns=df.columns)  # 또는 필요한 열 구조를 지정
     df_cart = pd.concat([df_cart, df[df['bool'] == True]], ignore_index=True)
-
     # 중복 제거
     df_cart = df_cart.drop_duplicates(subset=['자재코드'], keep='last')
     return df_cart
