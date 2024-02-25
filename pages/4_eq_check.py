@@ -209,7 +209,7 @@ if Item_ is not None:
     if os.path.exists(df_boom_list_path):
         df_boom_list = pd.read_excel(df_boom_list_path)
         df_boom_list["bool"] = False
-        edited_df_boom_list = st.data_editor(key='df_boom_list',
+        edited_df_boom_list = st.data_editor(key='df_boom_list_editor',
                                              num_rows="dynamic", 
                                              use_container_width=True, 
                                              data=df_boom_list,
