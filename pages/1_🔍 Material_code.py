@@ -157,6 +157,7 @@ if edited_df_materail is not None:
 if st.button('Add to cart'):
     df_materail_cart = add_to_cart(df_materail)
     st.session_state.Cart_dataframe = pd.concat([st.session_state.Cart_dataframe, df_materail_cart]).reset_index(drop=True)
+    st.session_state.Cart_dataframe = st.session_state.Cart_dataframe.drop_duplicates(subset=['자재코드'], keep='last')
     st.success('Add to cart!')
 
 # 초기화
@@ -174,6 +175,7 @@ if edited_df_materail_pro is not None:
 if st.button('Add to cart.'):
     df_materail_cart = add_to_cart(df_materail_pro)
     st.session_state.Cart_dataframe = pd.concat([st.session_state.Cart_dataframe, df_materail_cart]).reset_index(drop=True)
+    st.session_state.Cart_dataframe = st.session_state.Cart_dataframe.drop_duplicates(subset=['자재코드'], keep='last')
     st.success('Add to cart!')
 
 # 장바구니 타이틀 추가
