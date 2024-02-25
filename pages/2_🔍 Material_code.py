@@ -1,15 +1,10 @@
 import streamlit as st
-import dataiku
 import pandas as pd, numpy as np
 import re
 import altair as alt
 import os
 
 from function_search import load_data
-from function_search import sentence_processing
-from function_search import vmi_processing
-from function_search import vmi_list_find
-from function_search import embedding_rank
 from function_search import find_codes
 from function_search import search_CODE_data
 from function_search import search_SPEC_CLASS_data
@@ -112,10 +107,12 @@ if st.sidebar.button('검색'):
 
 # Create Bulk Data button 추가
 st.sidebar.title('Bulk Data Upload')
+
+# Create Bulk 업로드 파일 추가
 uploaded_files = st.sidebar.file_uploader("Bulk Data Upload", accept_multiple_files=True)
 
+# 벌크 차트 프레임 생성 
 df_materail_bulk = pd.DataFrame()
-# Create df_materail_bulk frame 
 if st.sidebar.button('Input to Bulk list'):
     for uploaded_file in uploaded_files:
         if uploaded_file.name.endswith('.csv'):
@@ -131,24 +128,22 @@ if st.sidebar.button('Input to Bulk list'):
 elif uploaded_files is None:
     st.session_state.df_materail_bulk_list = pd.DataFrame()
 
-# Download Upload format button
-with open("format.xlsx", 'rb') as my_file:
+# Download 업로드 포멧 button
+with open("streamlit/format.xlsx", 'rb') as my_file:
     df_materail_format = pd.DataFrame({"ITEM": ["pipe"], "SIZE": [2], "자재내역": ["smls, sch80, 304, pe"]}, index=[0])
-    df_materail_format.to_excel('format.xlsx', index=False)
+    df_materail_format.to_excel('streamlit/format.xlsx', index=False)
     st.sidebar.download_button(label = 'Download format', data = my_file, file_name = 'format.xlsx', mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-
-# if st.sidebar.button('Download format.xlsx'):
-#     st.session_state.Cart_dataframe.to_excel('format.xlsx', index=False)
-#     st.download_button(label = 'Download Cart', data = my_file, file_name = 'format.xlsx', mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-#     st.success('Downloaded format.xlsx!')
 
 ##################### Main web #####################
 
 # _Search Pro_
 st.title('_Search Pro_ :blue[Ai] :man-running:')
+
 # Search List
 st.header('Search List :smiley_cat:')
 st.write("Total", df_materail.shape[0])
+
+# Search 프레임
 edited_df_materail = st.data_editor(df_materail, key='df_materail_editor', use_container_width=True) #####################
 if edited_df_materail is not None:
     df_materail = edited_df_materail
@@ -157,15 +152,17 @@ if edited_df_materail is not None:
 if st.button('Add to cart'):
     df_materail_cart = add_to_cart(df_materail)
     st.session_state.Cart_dataframe = pd.concat([st.session_state.Cart_dataframe, df_materail_cart]).reset_index(drop=True)
+    # st.session_state.Cart_dataframe = st.session_state.Cart_dataframe.drop_duplicates(subset=['자재코드'], keep='last')
     st.success('Add to cart!')
 
-# 초기화
+# 장바구니 시즌스테이트 초기화
 if 'Cart_dataframe' not in st.session_state:
     st.session_state.Cart_dataframe = pd.DataFrame()
 
 # 인공지능 서치    
 st.title('AI Search List :mag:')
 
+# 인공지능 서치 프레임
 edited_df_materail_pro = st.data_editor(st.session_state.df_materail_pro, key='df_materail_pro_editor', use_container_width=True) #####################
 if edited_df_materail_pro is not None:
     df_materail_pro = edited_df_materail_pro
@@ -174,6 +171,7 @@ if edited_df_materail_pro is not None:
 if st.button('Add to cart.'):
     df_materail_cart = add_to_cart(df_materail_pro)
     st.session_state.Cart_dataframe = pd.concat([st.session_state.Cart_dataframe, df_materail_cart]).reset_index(drop=True)
+    # st.session_state.Cart_dataframe = st.session_state.Cart_dataframe.drop_duplicates(subset=['자재코드'], keep='last')
     st.success('Add to cart!')
 
 # 장바구니 타이틀 추가
@@ -189,14 +187,14 @@ if st.button('Drop duplicates'):
     st.session_state.Cart_dataframe = st.session_state.Cart_dataframe.drop_duplicates(subset=['자재코드'], keep='last')
     st.success('Drop duplicates in Cart!')
 
-# Display the cart dataframe
+# 장바구니 프레임
 edited_cart_df_materail = st.data_editor(st.session_state.Cart_dataframe, num_rows="dynamic",key='cart_editor', use_container_width=True) #####################
 if edited_cart_df_materail is not None:
     st.session_state.Cart_dataframe = edited_cart_df_materail
 
-# Download Excel 버튼
-with open("cart_list.xlsx", 'rb') as my_file:
-    st.session_state.Cart_dataframe.to_excel('cart_list.xlsx', index=False)
+# Download 장바구니 버튼
+with open("streamlit/cart_list.xlsx", 'rb') as my_file:
+    st.session_state.Cart_dataframe.to_excel('streamlit/cart_list.xlsx', index=False)
     st.download_button(label = 'Download Cart :white_check_mark:', data = my_file, file_name = 'cart_list.xlsx', mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 # 초기화
@@ -218,7 +216,7 @@ if edited_bulk_df_materail is not None:
     st.session_state.df_materail_bulk_list = edited_bulk_df_materail
 
 # Bulk Download Excel 버튼
-with open("bulk_list.xlsx", 'rb') as my_file:
-    st.session_state.df_materail_bulk_list.to_excel('bulk_list.xlsx', index=False)
+with open("streamlit/bulk_list.xlsx", 'rb') as my_file:
+    st.session_state.df_materail_bulk_list.to_excel('streamlit/bulk_list.xlsx', index=False)
     st.download_button(label = 'Download Bulk :white_check_mark:', data = my_file, file_name = 'bulk_list.xlsx', mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 ############################################
