@@ -235,7 +235,7 @@ def embedding_rank(df, sentence):
     # doc_top_rank = doc_top_rank.head(5)
     doc_top_rank['유사도'] = doc_top_rank['유사도'].apply(lambda x: f"{x:.1%}")
 
-    return doc_top_rank[["자재코드", "ITEM", "SIZE", "SUB_SIZE", "RATING", "FLANGE_FACE", "BASIC_MATERIAL", "자재내역", "유사도"]]
+    return doc_top_rank[df.columns.tolist()]
 
 ###################################################
 
