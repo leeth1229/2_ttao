@@ -235,6 +235,11 @@ with open(df_boom_list_path, 'rb') as my_file:
 
 st.subheader("Cart List 🛒")
 
+# Reset Cart 버튼
+if st.button('Reset Cart'):
+    df_materail_cart = pd.DataFrame()
+    st.session_state.Cart_dataframe = pd.DataFrame()
+
     # 초기화
 if 'Cart_dataframe' not in st.session_state:
     st.session_state.Cart_dataframe = pd.DataFrame()
