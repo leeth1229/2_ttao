@@ -4,37 +4,34 @@ def convert_dir_to_tree(folder_paths):
     group_items = {}  # This will store the group items.
 
     for file_path in folder_paths:
-        folder_path, file_name = os.path.split(file_path)
+        # Split the path into parts
+        parts = file_path.strip("/").split("/")
+        group_name = parts[0]  # The first part is always the group name
 
-        # Get the group name
-        group_name = folder_path.split("/")[1]
-
-        # Check if the group item already exists
+        # Ensure group item exists
         group_item = group_items.get(group_name)
         if group_item is None:
-            # Create the group item
             group_item = sac.TreeItem(group_name, disabled=True, children=[], tag=[sac.Tag('Plant', color='red'), sac.Tag('lv1', color='cyan')])
             tree_items.append(group_item)
             group_items[group_name] = group_item
 
-        # Create the folder tree structure under the group item
+        # Iterate through the rest of the parts to build the tree structure
         current_item = group_item
-        for folder_name in folder_path.split("/")[2:]:
-            # Check if the folder item already exists
+        for folder_name in parts[1:]:
+            # Check if the folder item already exists under the current item
             folder_item = None
             for child_item in current_item.children:
                 if child_item.label == folder_name:
                     folder_item = child_item
                     break
+
+            # If the folder item doesn't exist, create and append it
             if folder_item is None:
-                # Create the folder item
                 folder_item = sac.TreeItem(folder_name, disabled=False, children=[], tag=[sac.Tag('lv2', color='blue')])
                 current_item.children.append(folder_item)
+            
+            # Move the current item pointer to the new or found folder item
             current_item = folder_item
-
-        # Add the file item to the folder tree structure
-        file_item = sac.TreeItem(file_name, icon='table', tag=[sac.Tag('lv3', color='green')])
-        # current_item.children.append(file_item)
 
     return tree_items
 
