@@ -1,0 +1,41 @@
+# Define a function to convert the directory structure to a tree structure
+def convert_dir_to_tree(folder_paths):
+    tree_items = []  # This will store the converted tree items.
+    group_items = {}  # This will store the group items.
+
+    for file_path in folder_paths:
+        folder_path, file_name = os.path.split(file_path)
+
+        # Get the group name
+        group_name = folder_path.split("/")[1]
+
+        # Check if the group item already exists
+        group_item = group_items.get(group_name)
+        if group_item is None:
+            # Create the group item
+            group_item = sac.TreeItem(group_name, disabled=True, children=[], tag=[sac.Tag('Plant', color='red'), sac.Tag('lv1', color='cyan')])
+            tree_items.append(group_item)
+            group_items[group_name] = group_item
+
+        # Create the folder tree structure under the group item
+        current_item = group_item
+        for folder_name in folder_path.split("/")[2:]:
+            # Check if the folder item already exists
+            folder_item = None
+            for child_item in current_item.children:
+                if child_item.label == folder_name:
+                    folder_item = child_item
+                    break
+            if folder_item is None:
+                # Create the folder item
+                folder_item = sac.TreeItem(folder_name, disabled=False, children=[], tag=[sac.Tag('lv2', color='blue')])
+                current_item.children.append(folder_item)
+            current_item = folder_item
+
+        # Add the file item to the folder tree structure
+        file_item = sac.TreeItem(file_name, icon='table', tag=[sac.Tag('lv3', color='green')])
+        # current_item.children.append(file_item)
+
+    return tree_items
+
+tree_items = convert_dir_to_tree(folder_paths)
