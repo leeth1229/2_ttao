@@ -1,38 +1,75 @@
-# Define a function to convert the directory structure to a tree structure
-def convert_dir_to_tree(folder_paths):
-    tree_items = []  # This will store the converted tree items.
-    group_items = {}  # This will store the group items.
+import streamlit as st
+from PIL import Image
+import fitz  # PyMuPDF
+import os
+import tempfile
+import io
 
-    for file_path in folder_paths:
-        # Split the path into parts
-        parts = file_path.strip("/").split("/")
-        group_name = parts[0]  # The first part is always the group name
+# Define a function to show a PDF page
+def show_pdf_page(pdf_path, current_page, rotation_angle):
+    # Ensure the PDF file exists
+    if not os.path.exists(pdf_path):
+        raise FileNotFoundError(f"The file {pdf_path} does not exist.")
+    
+    # Open the PDF file
+    doc = fitz.open(pdf_path)
+    # Adjust the current page number to be within the document's bounds
+    current_page = max(0, min(current_page, len(doc) - 1))
+    # Load the specified page
+    page = doc.load_page(current_page)
+    # Apply rotation
+    mat = fitz.Matrix(2, 2).prerotate(rotation_angle)
+    # Create an image of the page
+    pix = page.get_pixmap(matrix=mat)
+    img = Image.open(io.BytesIO(pix.tobytes()))
+    # Close the document
+    doc.close()
+    return img, current_page
 
-        # Ensure group item exists
-        group_item = group_items.get(group_name)
-        if group_item is None:
-            group_item = sac.TreeItem(group_name, disabled=True, children=[], tag=[sac.Tag('Plant', color='red'), sac.Tag('lv1', color='cyan')])
-            tree_items.append(group_item)
-            group_items[group_name] = group_item
+# Streamlit UI
+st.subheader("Drawing Viewing")
+# Initial setup
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = 0
+if 'rotation' not in st.session_state:
+    st.session_state.rotation = 0
 
-        # Iterate through the rest of the parts to build the tree structure
-        current_item = group_item
-        for folder_name in parts[1:]:
-            # Check if the folder item already exists under the current item
-            folder_item = None
-            for child_item in current_item.children:
-                if child_item.label == folder_name:
-                    folder_item = child_item
-                    break
+# Fetching the item folder from the path
+df_boom_list_path = "path_to_your_excel_file_here"  # Replace with actual path
+item_folder = df_boom_list_path.rsplit('/', 1)[0]
 
-            # If the folder item doesn't exist, create and append it
-            if folder_item is None:
-                folder_item = sac.TreeItem(folder_name, disabled=False, children=[], tag=[sac.Tag('lv2', color='blue')])
-                current_item.children.append(folder_item)
-            
-            # Move the current item pointer to the new or found folder item
-            current_item = folder_item
+# Handling PDF files
+pdf_list = []
+with tempfile.TemporaryDirectory() as temp_dir:
+    for path in st.session_state.list_files:  # Ensure list_files is in st.session_state
+        if path.startswith(item_folder) and path.endswith(".pdf"):
+            with st.session_state.FOLDER.get_download_stream(path) as f:  # Replace with actual method to get file
+                full_path = os.path.join(temp_dir, os.path.basename(path))
+                with open(full_path, 'wb') as pdf_file:
+                    pdf_file.write(f.read())
+            pdf_list.append(full_path)
 
-    return tree_items
+if pdf_list:
+    pdf_name = st.sidebar.selectbox("Select PDF", [os.path.basename(p) for p in pdf_list])
+    pdf_path = next((p for p in pdf_list if os.path.basename(p) == pdf_name), None)
 
-tree_items = convert_dir_to_tree(folder_paths)
+    # Navigation and rotation buttons
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        if st.button('Previous Page'):
+            st.session_state.current_page -= 1
+        if st.button("Rotate -90°"):
+            st.session_state.rotation -= 90
+
+    with col3:
+        if st.button('Next Page'):
+            st.session_state.current_page += 1
+        if st.button("Rotate 90°"):
+            st.session_state.rotation += 90
+
+    if pdf_path:
+        # Display the current page of the PDF
+        img, st.session_state.current_page = show_pdf_page(pdf_path, st.session_state.current_page, st.session_state.rotation)
+        st.image(img, caption=f'Page {st.session_state.current_page + 1}', use_column_width=True)
+else:
+    st.error("No PDF files found in the selected directory. Please update the required drawings.")
