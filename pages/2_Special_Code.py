@@ -1,239 +1,199 @@
 import pandas as pd
 import streamlit as st
 import streamlit_antd_components as sac
-from streamlit_image_coordinates import streamlit_image_coordinates
-from streamlit_image_annotation import classification
-
-import openpyxl
-import re
-
-import fitz  # PyMuPDF
 from PIL import Image
-from glob import glob
-import io
+import openpyxl
+import fitz  # PyMuPDF
+import re
 import os
-import matplotlib as plt
+import tempfile
+import dataiku
+import io
+import math
 
 from function_search import add_to_cart
 
 st.set_page_config(layout="wide")
 
-# Define the root directory
-file_path = 'streamlit/docs/items'
+def get_folder_paths(file_paths):
+    folder_paths = []
+    for file_path in file_paths:
+        folder_path = os.path.dirname(file_path)
+        folder_paths.append(folder_path)
+    return folder_paths
 
 # Define a function to convert the directory structure to a tree structure
-def convert_dir_to_tree(file_path):
+def convert_dir_to_tree(folder_paths):
     tree_items = []  # This will store the converted tree items.
-    for level_1 in os.listdir(file_path):
-        level_1_path = os.path.join(file_path, level_1)
-        if level_1.startswith('.'):  # 숨겨진 파일이나 폴더 건너뛰기
-            continue
-        if os.path.isdir(level_1_path):
-            item_1 = sac.TreeItem(level_1, disabled=True, tag=[sac.Tag('Plant', color='red'), sac.Tag('lv1', color='cyan')], children=[])
-            for level_2 in os.listdir(level_1_path):
-                level_2_path = os.path.join(level_1_path, level_2)
-                if level_2.startswith('.'):
-                    continue
-                if os.path.isdir(level_2_path):
-                    item_2 = sac.TreeItem(level_2, icon='table', tag=[sac.Tag('lv2', color='blue')], children=[])
-                    for level_3 in os.listdir(level_2_path):
-                        level_3_path = os.path.join(level_2_path, level_3)
-                        if level_3.startswith('.'):
-                            continue
-                        if os.path.isdir(level_3_path):
-                            item_3 = sac.TreeItem(level_3, icon='table', tag=[sac.Tag('lv3', color='green')], children=[])
-                            item_2.children.append(item_3)
-                    item_1.children.append(item_2)
-            tree_items.append(item_1)
+    group_items = {}  # This will store the group items.
+
+    for file_path in folder_paths:
+        # Split the path into parts
+        parts = file_path.strip("/").split("/")
+        group_name = parts[0]  # The first part is always the group name
+
+        # Ensure group item exists
+        group_item = group_items.get(group_name)
+        if group_item is None:
+            group_item = sac.TreeItem(group_name, disabled=True, children=[], tag=[sac.Tag('Plant', color='red'), sac.Tag('lv1', color='cyan')])
+            tree_items.append(group_item)
+            group_items[group_name] = group_item
+
+        # Iterate through the rest of the parts to build the tree structure
+        current_item = group_item
+        for folder_name in parts[1:]:
+            # Check if the folder item already exists under the current item
+            folder_item = None
+            for child_item in current_item.children:
+                if child_item.label == folder_name:
+                    folder_item = child_item
+                    break
+
+            # If the folder item doesn't exist, create and append it
+            if folder_item is None:
+                folder_item = sac.TreeItem(folder_name, icon='table', tag=[sac.Tag('lv2', color='blue')], children=[])
+                current_item.children.append(folder_item)
+            
+            # Move the current item pointer to the new or found folder item
+            current_item = folder_item
+
     return tree_items
 
+FOLDER = dataiku.Folder("ezuSeiHz")
 
-def Item_path_find(file_path):
-    Item_path = []
-    # 기본 데이터 프레임 생성
-    default_data = {
-        '자재코드': [],
-        'tag_no': [], # 설비 아이디 고유 번호
-        'model_no': [], # 모델 번호
-        'dwg_no': [], # 도면 고유 번호
-        'item_no': [], # 파트 아이템 넘버
-        'part_no': [], # 파트 고유 번호
-        'VMI재고': [], # VMI 재고
-        '구매재고': [], # 구매 재고
-        '자재단가': [], # 구매 재고
-        'special': [] # 비고
-    }
-    default_df = pd.DataFrame(default_data)
-    
-    for level1 in os.listdir(file_path):
-        if level1.startswith('.'):  # 숨겨진 파일이나 폴더 건너뛰기
-            continue
-        folder_path_1 = os.path.join(file_path, level1)
-        if os.path.isdir(folder_path_1):
-            Item_path.append(folder_path_1)
-            for level2 in os.listdir(folder_path_1):
-                if level2.startswith('.'):
-                    continue
-                folder_path_2 = os.path.join(folder_path_1, level2)
-                if os.path.isdir(folder_path_2):
-                    Item_path.append(folder_path_2)
-                    xlsx_path = os.path.join(folder_path_2, f'{level2}.xlsx')
-                    # xlsx 파일이 존재하는 경우 컬럼 확인 및 업데이트
-                    if os.path.exists(xlsx_path):
-                        df = pd.read_excel(xlsx_path)
-                        # 필요한 컬럼이 모두 있는지 확인하고 없으면 추가
-                        for column in default_data.keys():
-                            if column not in df.columns:
-                                df[column] = None  # 새 컬럼 추가
-                        df.to_excel(xlsx_path, index=False)  # 변경된 데이터프레임 저장
-                    else:
-                        default_df.to_excel(xlsx_path, index=False)  # 새 파일 생성
+list_files = FOLDER.list_paths_in_partition()
 
-                    for level3 in os.listdir(folder_path_2):
-                        if level3.startswith('.'):
-                            continue
-                        folder_path_3 = os.path.join(folder_path_2, level3)
-                        if os.path.isdir(folder_path_3):
-                            Item_path.append(folder_path_3)
-                            xlsx_path_ = os.path.join(folder_path_3, f'{level3}.xlsx')
-                            # xlsx 파일이 존재하는 경우 컬럼 확인 및 업데이트
-                            if os.path.exists(xlsx_path_):
-                                df = pd.read_excel(xlsx_path_)
-                                for column in default_data.keys():
-                                    if column not in df.columns:
-                                        df[column] = None  # 새 컬럼 추가
-                                df.to_excel(xlsx_path_, index=False)
-                            else:
-                                default_df.to_excel(xlsx_path_, index=False)  # 새 파일 생성
-    return Item_path
+folder_paths = get_folder_paths(list_files)
 
-
-# 검색 기능을 위한 Streamlit 입력 필드 추가
-search_query = st.sidebar.text_input("Search Tag No.", "")
-
-# 검색 로직을 포함하는 함수 정의
-def search_tree_items(tree_items, query):
-    if query == "":  # 검색어가 없으면 모든 항목을 반환
-        return tree_items
-    else:
-        # 검색어가 포함된 항목만 필터링
-        filtered_items = []
-        for item in tree_items:
-            if query.lower() in item.label.lower():  # 대소문자 구분 없이 검색
-                filtered_items.append(item)
-            else:
-                # 자식 항목 중에서 검색
-                child_matches = search_tree_items(item.children, query)
-                if child_matches:
-                    new_item = sac.TreeItem(item.label, disabled=True, children=child_matches)
-                    filtered_items.append(new_item)
-        return filtered_items
-
-# Convert the directory structure to a tree structure
-tree_items = convert_dir_to_tree(file_path)
-
-# 검색 결과에 따라 트리 항목 업데이트
-tree_items = search_tree_items(tree_items, search_query)
+tree_items = convert_dir_to_tree(folder_paths)
 
 with st.sidebar:
-    # Use the tree_items in your sac.tree
-    sac.divider(label='Tag Trees', align='center', color='gray')
     
-    if search_query != "": # 검색 시
-        Item_ = sac.tree(
-            items=tree_items,
-            label='Tag No.',
-            size='sm',
-            color='#4682b4',
-            index=1,
-            open_all=True,
-            checkbox=False,
-            checkbox_strict=True
-            )
-        
-        sac.divider(label='file path', align='center', color='gray')
-        Item_path = Item_path_find(file_path)
-        for path_ in Item_path:
-            if os.path.basename(path_) == Item_:  # Matching the directory name
-                df_boom_list_path = os.path.join(path_, f"{Item_}.xlsx")
-                break
-        st.write(df_boom_list_path)
-
-    else: # 일반 
-        Item_ = sac.tree(
-            items=tree_items,
-            label='Tag No.',
-            size='sm',
-            color='#4682b4',
-            index=1,
-            open_all=True,
-            checkbox=False,
-            return_index=True
-            )
-
-        sac.divider(label='file path', align='center', color='gray')
-        Item_path = Item_path_find(file_path)
-        st.write(Item_path)
-
-        st.write(Item_)
-        df_boom_list_path = os.path.join(Item_path[Item_], f"{os.path.basename(Item_path[Item_])}.xlsx")
-        st.write(df_boom_list_path)
-
-    sac.divider(label='file generator', align='center', color='gray')
-    # 파일 및 폴더 관리 액션 선택
-    action = st.sidebar.selectbox("Select action", ["None", "Create", "Rename", "Delete"])
-                
-    # 선택된 액션에 따라 로직 처리
-    if action == "Create":
-        new_file_folder = st.sidebar.text_input("Enter new file/folder name")
-        if st.sidebar.button("Create"):
-            os.makedirs(os.path.join(file_path, new_file_folder), exist_ok=True)
-            st.sidebar.success(f"Created {new_file_folder}")
-
-    elif action == "Rename":
-        target = st.sidebar.text_input("Enter file/folder name to rename")
-        new_name = st.sidebar.text_input("Enter new name")
-        if st.sidebar.button("Rename"):
-            os.rename(os.path.join(file_path, target), os.path.join(file_path, new_name))
-            st.sidebar.success(f"Renamed {target} to {new_name}")
-
-    elif action == "Delete":
-        target = st.sidebar.text_input("Enter file/folder name to delete")
-        if st.sidebar.button("Delete"):
-            if os.path.isdir(os.path.join(file_path, target)):
-                os.rmdir(os.path.join(file_path, target))  # 폴더 삭제
-            else:
-                os.remove(os.path.join(file_path, target))  # 파일 삭제
-            st.sidebar.success(f"Deleted {target}")
-                    
-st.title("설비 전용자재 코드 list")
+    Item_ = sac.tree(
+        items=tree_items,
+        label='Tag No.',
+        size='sm',
+        color='#4682b4',
+        index=1,
+        open_all=True,
+        checkbox=False,
+        return_index=False,
+        checkbox_strict = True
+        )
 
 
-st.subheader("Code list")
-
-if Item_ is not None:
-    # Determine the cor rect Excel file path based on user selection
-    if os.path.exists(df_boom_list_path):
-        df_boom_list = pd.read_excel(df_boom_list_path)
-        df_boom_list["bool"] = False
-        edited_df_boom_list = st.data_editor(key='df_boom_list_editor',
-                                             num_rows="dynamic", 
-                                             use_container_width=False, 
-                                             data=df_boom_list,
-                                             )
+    if not isinstance(Item_, list):
+        Item_ = Item_.split(".")[0]
     else:
-        st.sidebar.write("No Excel file found for this folder.")
+        Item_ = Item_[0].split(".")[0]
+    
+    for index,path in enumerate(folder_paths):
+        if Item_ in path:
+            tag_index = index
+            break
 
-# 데이터를 엑셀 파일로 저장
-if st.button('데이터 저장'):
-    edited_df_boom_list.to_excel(df_boom_list_path, index=False)
+    # st.write(tag_index)
+    df_boom_list_path = f"{list_files[tag_index]}"
 
-st.subheader("설비도면")
+    default_data = {
+        '자재코드': ["20240001"],
+        'tag_no': ["GA-000"], # 설비 아이디 고유 번호
+        'maker': ["LG.C"], # 설비 아이디 고유 번호
+        'model_no': ["LGC24MODELS1"], # 모델 번호
+        'dwg_no': ["DWG 2024 001"], # 도면 고유 번호
+        'item_no': ["1"], # 파트 아이템 넘버
+        'part_no': ["LG-Chem-1"], # 파트 고유 번호
+        # '재고1': [], # VMI 재고
+        # '재고2': [], # 구매 재고
+        # '자재단가': [], # 구매 재고
+        # '공장': [], # 중복 입력 가능토록
+        'Description': ["Description"] # 비고
+    }
+
+    default_data_df = pd.DataFrame(default_data)
+
+    # 선택된 액션에 따라 로직 처리
+
+
+with FOLDER.get_download_stream(df_boom_list_path) as f:
+    df_boom_list = pd.read_excel(f.read(), engine='openpyxl')
+
+# 탭 생성
+tab1, tab2 = st.tabs(["Special Code", "Help"])
+
+with tab1:
+    st.subheader("Code list")
+    if Item_ is not None:
+        if df_boom_list is not None:
+            # Determine the correct Excel file path based on user selection
+            if len(df_boom_list.index) == 0:
+                df_boom_list = default_data_df
+            df_boom_list["bool"] = False
+            edited_df_boom_list = st.data_editor(data = df_boom_list,
+                                                key='edited_key1',
+                                                num_rows="dynamic", 
+                                                use_container_width=True,
+                                                column_config={
+                                                    "자재코드": st.column_config.NumberColumn(
+                                                        format  = "%u",
+                                                        required = True
+                                                        ),
+                                                    "tag_no" : st.column_config.TextColumn(
+                                                        default = df_boom_list["tag_no"].iloc[-1]
+                                                        ),
+                                                    "maker" : st.column_config.TextColumn(
+                                                        default = df_boom_list["maker"].iloc[-1]
+                                                        ),
+                                                    "model_no" : st.column_config.TextColumn(
+                                                        default = df_boom_list["model_no"].iloc[-1]
+                                                        ),
+                                                    "dwg_no" : st.column_config.TextColumn(
+                                                        default = df_boom_list["dwg_no"].iloc[-1]
+                                                        ),
+                                                    "item_no" : st.column_config.NumberColumn(
+                                                        format  = "%f",
+                                                        # help = st.image("/home/dataiku/workspace/code_studio-versioned/streamlit/docs/exp/file_generator_exp.png")
+                                                        ),
+                                                    "part_no" : st.column_config.TextColumn(
+                                                        ),
+                                                    "비고" : st.column_config.Column(
+                                                        ),
+                                                    }
+                                                )
+        else:
+            st.sidebar.write("No Excel file found for this folder.")
+
+    if edited_df_boom_list is not None:
+        df_boom_list = edited_df_boom_list
+
+
+st.subheader("Drawing Viewing")
+item_folder = df_boom_list_path.rsplit('/', 1)[0]
+
+with tempfile.TemporaryDirectory() as temp_dir:
+    for path in list_files:
+        if path.startswith(item_folder) and path.endswith(".pdf"):
+            with FOLDER.get_download_stream(path) as f:
+                full_path = os.path.join(temp_dir, os.path.basename(path))
+                data = f.read()
+                with open(full_path, 'wb') as f:
+                    f.write(data)
+    pdf_list = os.listdir(temp_dir)
 
 def show_pdf_page(pdf_path, current_page, rotation_angle):
+    
+    if not os.path.exists(pdf_path):
+        # pdf_path가 존재하지 않는 경우, pdf_list에서 첫 번째 PDF 파일을 다운로드
+        with FOLDER.get_download_stream(pdf_list[0]) as f:
+            data = f.read()
+            with open(pdf_path, 'wb') as f:
+                f.write(data)
+
     doc = fitz.open(pdf_path)
+
     if current_page < 0:
         current_page = 0
+
     elif current_page >= len(doc):
         current_page = len(doc) - 1
     page = doc.load_page(current_page)
@@ -244,19 +204,22 @@ def show_pdf_page(pdf_path, current_page, rotation_angle):
     pix = page.get_pixmap(matrix=mat)  # 수정된 매트릭스를 사용하여 이미지 생성
     img = Image.open(io.BytesIO(pix.tobytes()))
     doc.close()
-    return img, current_page
 
+    return img, current_page
 
 # 선택된 항목에서 PDF 파일 찾기 및 초기 페이지 설정
 if 'current_page' not in st.session_state:
     st.session_state.current_page = 0  # 세션 상태에 현재 페이지 번호를 저장
 
 if 'Item_' in locals() and Item_ is not None:
-    item_folder = df_boom_list_path.rsplit('/', 1)[0]
-    pdf_files = [file for file in os.listdir(item_folder) if file.endswith('.pdf')]
-    if pdf_files:
-        selected_pdf = st.selectbox('Select a PDF file:', pdf_files, key='pdf_select')
-        pdf_path = os.path.join(item_folder, selected_pdf)
+
+    if pdf_list:
+        st.write(list_files)
+        st.write(df_boom_list_path)
+        st.write(item_folder)
+        pdf_name = st.sidebar.selectbox("PDF 선택", pdf_list)
+        
+        pdf_path = os.path.join(item_folder,pdf_name)
 
         # 페이지 넘김 및 회전 버튼
         col1, col2, col3 = st.columns([1,1,1])
@@ -275,3 +238,5 @@ if 'Item_' in locals() and Item_ is not None:
         # 현재 페이지의 PDF 이미지 보여주기
         img, current_page = show_pdf_page(pdf_path, st.session_state.current_page, st.session_state.rotation)
         st.image(img, caption=f'Page {current_page + 1}', use_column_width=True)
+    else: 
+        st.markdown("필요 도면을 업데이트해주세요")
