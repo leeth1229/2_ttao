@@ -1,11 +1,18 @@
 import pandas as pd
 import streamlit as st
 import streamlit_antd_components as sac
-from PIL import Image
+from streamlit_image_coordinates import streamlit_image_coordinates
+from streamlit_image_annotation import classification
+
 import openpyxl
-import fitz  # PyMuPDF
 import re
+
+import fitz  # PyMuPDF
+from PIL import Image
+from glob import glob
+import io
 import os
+import matplotlib as plt
 
 from function_search import add_to_cart
 
@@ -54,7 +61,6 @@ def Item_path_find(file_path):
         'VMI재고': [], # VMI 재고
         '구매재고': [], # 구매 재고
         '자재단가': [], # 구매 재고
-
         'special': [] # 비고
     }
     default_df = pd.DataFrame(default_data)
@@ -167,8 +173,9 @@ with st.sidebar:
 
         sac.divider(label='file path', align='center', color='gray')
         Item_path = Item_path_find(file_path)
-        # st.write(Item_path)
-        # st.write(Item_)
+        st.write(Item_path)
+
+        st.write(Item_)
         df_boom_list_path = os.path.join(Item_path[Item_], f"{os.path.basename(Item_path[Item_])}.xlsx")
         st.write(df_boom_list_path)
 
@@ -200,7 +207,7 @@ with st.sidebar:
             st.sidebar.success(f"Deleted {target}")
                     
 st.title("설비 전용자재 코드 list")
-st.subheader("설비도면")
+
 
 st.subheader("Code list")
 
@@ -211,7 +218,7 @@ if Item_ is not None:
         df_boom_list["bool"] = False
         edited_df_boom_list = st.data_editor(key='df_boom_list_editor',
                                              num_rows="dynamic", 
-                                             use_container_width=True, 
+                                             use_container_width=False, 
                                              data=df_boom_list,
                                              )
     else:
@@ -220,41 +227,51 @@ if Item_ is not None:
 # 데이터를 엑셀 파일로 저장
 if st.button('데이터 저장'):
     edited_df_boom_list.to_excel(df_boom_list_path, index=False)
-    st.success('데이터가 저장되었습니다.')
 
-# 카트 추가 버튼 노말
-if st.button('Add to cart'):
-    df_materail_cart = add_to_cart(edited_df_boom_list)
-    st.session_state.Cart_dataframe = pd.concat([st.session_state.Cart_dataframe, df_materail_cart]).reset_index(drop=True)
-    st.success('Add to cart!')
+st.subheader("설비도면")
 
-# Download Excel 버튼
-with open(df_boom_list_path, 'rb') as my_file:
-    edited_df_boom_list.to_excel(df_boom_list_path, index=False)
-    st.download_button(label = 'Download boom list :white_check_mark:', data = my_file, file_name = df_boom_list_path, mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+def show_pdf_page(pdf_path, current_page, rotation_angle):
+    doc = fitz.open(pdf_path)
+    if current_page < 0:
+        current_page = 0
+    elif current_page >= len(doc):
+        current_page = len(doc) - 1
+    page = doc.load_page(current_page)
+    
+    # 페이지 회전 적용
+    mat = fitz.Matrix(2, 2).prerotate(rotation_angle)
+    
+    pix = page.get_pixmap(matrix=mat)  # 수정된 매트릭스를 사용하여 이미지 생성
+    img = Image.open(io.BytesIO(pix.tobytes()))
+    doc.close()
+    return img, current_page
 
-st.subheader("Cart List 🛒")
 
-# Reset Cart 버튼
-if st.button('Reset Cart'):
-    df_materail_cart = pd.DataFrame()
-    st.session_state.Cart_dataframe = pd.DataFrame()
+# 선택된 항목에서 PDF 파일 찾기 및 초기 페이지 설정
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = 0  # 세션 상태에 현재 페이지 번호를 저장
 
-# 카트 중복 제거 버튼
-if st.button('Drop duplicates'):
-    st.session_state.Cart_dataframe = st.session_state.Cart_dataframe.drop_duplicates(subset=['자재코드'], keep='last')
-    st.success('Drop duplicates in Cart!')
+if 'Item_' in locals() and Item_ is not None:
+    item_folder = df_boom_list_path.rsplit('/', 1)[0]
+    pdf_files = [file for file in os.listdir(item_folder) if file.endswith('.pdf')]
+    if pdf_files:
+        selected_pdf = st.selectbox('Select a PDF file:', pdf_files, key='pdf_select')
+        pdf_path = os.path.join(item_folder, selected_pdf)
 
-    # 초기화
-if 'Cart_dataframe' not in st.session_state:
-    st.session_state.Cart_dataframe = pd.DataFrame()
+        # 페이지 넘김 및 회전 버튼
+        col1, col2, col3 = st.columns([1,1,1])
+        with col1:
+            if st.button('Previous Page'):
+                st.session_state.current_page -= 1
+            if st.button("Rotate -90°"):
+                st.session_state.rotation -= 90
 
-# Display the cart dataframe
-edited_cart_df_materail = st.data_editor(st.session_state.Cart_dataframe, num_rows="dynamic",key='cart_editor', use_container_width=True) #####################
-if edited_cart_df_materail is not None:
-    st.session_state.Cart_dataframe = edited_cart_df_materail
+        with col3:
+            if st.button('Next Page'):
+                st.session_state.current_page += 1
+            if st.button("Rotate 90°"):
+                st.session_state.rotation += 90
 
-# Download Excel 버튼
-with open("streamlit/cart_list.xlsx", 'rb') as my_file:
-    st.session_state.Cart_dataframe.to_excel('streamlit/cart_list.xlsx', index=False)
-    st.download_button(label = 'Download Cart :white_check_mark:', data = my_file, file_name = 'cart_list.xlsx', mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        # 현재 페이지의 PDF 이미지 보여주기
+        img, current_page = show_pdf_page(pdf_path, st.session_state.current_page, st.session_state.rotation)
+        st.image(img, caption=f'Page {current_page + 1}', use_column_width=True)
