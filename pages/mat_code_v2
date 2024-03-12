@@ -30,6 +30,7 @@ def find_codes(df_bulk, df_original):
 
     return df_dataset_pd, df_dataset_pd_sub
 
+
 col1, col2,col3 = st.columns(3)
 with col1:
     # 3 bulk list 추가
