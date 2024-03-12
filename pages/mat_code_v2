@@ -1,0 +1,47 @@
+def find_codes(df_bulk, df_original):
+    df_dataset_pd = df_bulk[["ITEM","SIZE","자재내역"]]
+    if df_dataset_pd.empty:
+        return df_dataset_pd, pd.DataFrame()  # 서브 코드 리스트를 담을 빈 데이터프레임 반환
+
+    df_dataset_pd = modify_item_column(df_dataset_pd) # 아이템 수정
+    df_dataset_pd = modify_size_column(df_dataset_pd) # 사이즈 수정
+    sentence = df_dataset_pd.apply(lambda row: ','.join(row.astype(str)), axis=1) # 수정된 문장을 통으로 합치기
+
+    # 코드 찾기
+    find_coded = []
+    euc_coded = []
+    for i in range(len(df_dataset_pd)):
+        search_term_processing = sentence_processing(sentence[i]) # 문장 전처리
+        search_df = vmi_list_find(df_original, search_term_processing)
+        if search_df.empty:
+            find_coded.append("null")
+            euc_coded.append("null")
+            continue
+
+        search_df = embedding_rank(search_df, sentence[i]) # 탑 랭크 찾기
+        search_df.reset_index(drop=True, inplace=True)
+        find_coded.append(search_df["자재코드"][0]) # 탑 랭크의 첫번째 자재코드
+        euc_coded.append(search_df["유사도"][0]) # 유사도 저장
+        df_dataset_pd_sub = search_df[["자재코드","자재내역","유사도"]] # 탑랭크 5개를 띄어 쓰기로 저장
+
+    # 결과를 새로운 열로 DataFrame에 추가
+    df_dataset_pd['find_coded'] = find_coded
+    df_dataset_pd['euc_coded'] = euc_coded
+
+    return df_dataset_pd, df_dataset_pd_sub
+
+col1, col2,col3 = st.columns(3)
+with col1:
+    # 3 bulk list 추가
+    edited_bulk_df_materail = st.data_editor(st.session_state.df_materail_bulk_list, num_rows="dynamic",key='bulk_editor', use_container_width=True) 
+    if edited_bulk_df_materail is not None:
+        st.session_state.df_materail_bulk_list = edited_bulk_df_materail
+
+with col2:
+    # 우측 프레임: 코드를 찾은 결과 및 서브 코드 리스트 표시
+    df_materail_bulk_finded, df_dataset_pd_sub = find_codes(st.session_state.df_materail_bulk_list, df_materail_original)
+    st.dataframe(df_materail_bulk_finded)
+
+with col3:
+    # 우측 프레임: 서브 코드 리스트 표시
+    st.dataframe(df_dataset_pd_sub)
