@@ -1,0 +1,54 @@
+import streamlit as st
+from datetime import datetime, timedelta
+import streamlit_antd_components as sac
+
+st.set_page_config(
+    layout="wide",
+    page_title="Hello",
+    page_icon="🔑 Login"
+)
+
+st.write("# Hello😊")
+# 현재 날짜와 시간을 가져옴
+
+if "plant" not in st.session_state:
+    st.session_state.plant = "All"
+    st.session_state.email = "biliy@lgchem.com"
+    now = datetime.now()
+    future_date = now + timedelta(days=2)
+    future_date = future_date.strftime('%Y%m%d')
+    st.session_state.future_date = future_date
+    st.session_state.now = now
+    st.session_state.save_point = "9600"
+
+num_cols = 2
+cols = st.columns(num_cols)
+# Create an empty container
+placeholder = st.empty()
+
+# Insert a form in the container
+with placeholder.form("login"):
+    st.markdown("#### Enter your information")
+    plant = st.selectbox("Plant", ["All"] + ["ETH","UTY2","BD","BTX","HDPE1","HDPE2","HDPE3","PEPL","IPA2","OXO","PC","NP","3AA","BPA"])
+    email = st.text_input("G-portal ID", placeholder='@lgchem.com')
+    save_point = st.selectbox("저장위치", ["9600"] + ["9800","9100","9000","9200","9300","9400","9500","2000"])
+    submit = st.form_submit_button("Save")
+
+if submit: # and plant == actual_name and idNo == actual_idNo and email == actual_email
+    placeholder.empty()
+    st.success("Save successful")
+    st.session_state['Save_success'] = True
+    st.session_state.plant =plant
+    st.session_state.email =email + "@lgchem.com"
+    st.session_state.save_point =save_point
+    
+else:
+    pass
+
+st.sidebar.write(f"<small>Plant: {st.session_state.plant}</small>", unsafe_allow_html=True)
+st.sidebar.write(f"<small>Email: {st.session_state.email}</small>", unsafe_allow_html=True)
+st.sidebar.write(f"<small>저장위치: {st.session_state.save_point}</small>", unsafe_allow_html=True)
+st.sidebar.write(f"<small>Today: {st.session_state.now.strftime('%Y.%m.%d')}</small>", unsafe_allow_html=True)
+
+
+sac.alert(label='👈 미 입력 시 좌측 Default 값 입력', description='저장위치 : 9600 (용성1창고), 9800 (용성2창고), 9100 (화치배관창고), 9000 (화치공장창고), 9200 (PE공장창고), 9300 (SM공장창고), 9400 (VCM공장창고), 9500 (화성품공장창고), 2000 (현장창고)', variant='outline', banner=True, icon=True)
