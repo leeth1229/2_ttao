@@ -1,0 +1,602 @@
+import streamlit as st
+import pandas as pd, numpy as np
+import re
+import altair as alt
+import os
+import openpyxl
+
+from openpyxl import load_workbook
+from datetime import datetime, timedelta
+
+import streamlit_antd_components as sac
+
+from function_search import load_data
+from function_search import vmi_load_data
+from function_search import find_codes
+from function_search import sort_size
+from function_search import search_CODE_data
+from function_search import search_SPEC_CLASS_data
+from function_search import search_FIRST_ITEM_data
+from function_search import search_FIRST_ITEM_data_fitting
+from function_search import search_ITEM_data
+from function_search import search_bolt_SIZE_data
+from function_search import search_SIZE_data
+from function_search import search_SUB_SIZE_data
+from function_search import search_BASIC_MATERIAL_data
+from function_search import search_RATING_data
+from function_search import search_LIST_data
+from function_search import Ai_search_ITEM_data
+from function_search import Ai_search_ITEM_data_
+from function_search import add_to_cart
+from function_search import add_rows_to_excel
+from function_search import edited_cart_df_materail
+
+##################### Data Load #####################
+
+df_materail_original = load_data()
+
+df_cart_foramt = pd.DataFrame(columns = [
+                                        "요청구분",
+                                        "자재코드",
+                                        "요청수량",
+                                        "수령인",
+                                        "저장위치",
+                                        "요청납품일",
+                                        "설비태그번호",
+                                        "설비ID"
+                                    ]
+                                )
+
+############################################################################################################################################################################################################################
+
+with st.sidebar:
+    if "plant" not in st.session_state:
+        st.session_state.plant = "All"
+        st.session_state.email = "biliy@lgchem.com"
+        now = datetime.now()
+        future_date = now + timedelta(days=2)
+        future_date = future_date.strftime('%Y%m%d')
+        st.session_state.future_date = future_date
+        st.session_state.now = now
+        st.session_state.save_point = "9600"
+
+    st.write(f"<small>Plant: {st.session_state.plant}</small>", unsafe_allow_html=True)
+    st.write(f"<small>Email: {st.session_state.email}</small>", unsafe_allow_html=True)
+    st.write(f"<small>저장위치: {st.session_state.save_point}</small>", unsafe_allow_html=True)
+    st.write(f"<small>Today: {st.session_state.now.strftime('%Y.%m.%d')}</small>", unsafe_allow_html=True)
+    
+############################################################################################################################################################################################################################
+
+# 디폴트 장바구니
+df_start_cart = pd.DataFrame()
+
+# 장바구니 시즌스테이트 초기화
+if 'Cart_dataframe' not in st.session_state:
+    st.session_state.Cart_dataframe = df_start_cart
+
+# 탭 생성
+tab1, tab2, tab6, tab3, tab4, tab5, tab7  = st.tabs(["BM pro Search", "BM pro Ai Search", "Bulk Search", "vmi Search", "B/Nuts(B7) & Gaskets(S/W) & Dummys", "Cart List", "Help" ])
+
+with tab1:   
+
+    # _Search Pro_
+    st.subheader('_Search Pro_ :man-running:')
+
+    df_materail = df_materail_original
+
+    # 초기화
+    if 'df_materail' not in st.session_state:
+        st.session_state.df_materail = pd.DataFrame()
+
+    col011,col012 = st.columns([1,5])
+    with col011:
+        search_first_item = sac.buttons([
+                sac.ButtonsItem(label='PIPE'),
+                sac.ButtonsItem(label='VALVE'),
+                sac.ButtonsItem(label='FLANGE'),
+                sac.ButtonsItem(label='GASKET'),
+                sac.ButtonsItem(label='FITTING')
+                ], align='start')
+
+    with col012:
+        if search_first_item != "FITTING" and search_first_item != "VALVE":
+            df_materail = search_FIRST_ITEM_data(df_materail,search_first_item)
+
+        elif search_first_item == "VALVE":
+            df_materail = search_FIRST_ITEM_data_fitting(df_materail,["PIPE", "FLANGE", "GASKET", "BOSS", "ELBOW", "REDUCER", "TEE", "SWAGE", "CAP", "COUPLING-F", "NIPPLE", "UNION" ,"SPECTACLE", "BLANK", "SPACER", "WELDOLET"])
+            
+            search_first_item_lv2 = sac.buttons([
+                    sac.ButtonsItem(label='BALL'),
+                    sac.ButtonsItem(label='GATE'),
+                    sac.ButtonsItem(label='GLOBE'),
+                    sac.ButtonsItem(label='PLUG.V'),
+                    sac.ButtonsItem(label='B-FLY'),
+                    sac.ButtonsItem(label='NEEDLE'),
+                    sac.ButtonsItem(label='CHECK')
+                    ], align='start')
+            
+            df_materail = search_FIRST_ITEM_data(df_materail,search_first_item_lv2)
+
+        elif search_first_item == "FITTING":
+            df_materail = search_FIRST_ITEM_data_fitting(df_materail,["PIPE", "FLANGE", "GASKET", "BALL", "GATE", "GLOBE", "Y-GLOBE", "NEEDLE","B-FLY", "PLUG.V", "CHECK-S", "CHECK-B", "CHECK-L", "CHECK-P"])
+
+            search_first_item_lv2 = sac.buttons([
+                    sac.ButtonsItem(label='BOSS'),
+                    sac.ButtonsItem(label='ELBOW'),
+                    sac.ButtonsItem(label='REDUCER'),
+                    sac.ButtonsItem(label='TEE'),
+                    sac.ButtonsItem(label='SWAGE'),
+                    sac.ButtonsItem(label='OTHERS')
+                    ], align='start')
+
+            if search_first_item_lv2 != "OTHERS":
+                df_materail = search_FIRST_ITEM_data(df_materail,search_first_item_lv2)
+            else:
+                df_materail = search_FIRST_ITEM_data_fitting(df_materail,["BOSS", "ELBOW", "REDUCER", "TEE", "SWAGE"])
+
+    st.session_state.df_materail = df_materail
+
+    col11, col12, col13, col14, col15, col16 = st.columns(6)
+    
+    with col11:
+        search_item = st.multiselect('ITEM 선택' , df_materail["ITEM"].unique(), df_materail["ITEM"].unique()) 
+        if search_item:
+            df_materail = search_ITEM_data(df_materail,search_item)
+            st.session_state.df_materail = df_materail
+
+    # Create search box widget for SIZE
+    with col12:
+        search_size = st.multiselect('SIZE 선택', sort_size(df_materail["SIZE"]))
+        if search_size:
+            df_materail = search_SIZE_data(df_materail,search_size)  
+            st.session_state.df_materail = df_materail
+
+    # Create search box widget for SUB_SIZE
+    with col13:
+        search_sub_size = st.multiselect('SUB_SIZE 선택', sort_size(df_materail["SUB_SIZE"]))
+        if search_sub_size: # 사이즈2 검색
+            df_materail = search_SUB_SIZE_data(df_materail,search_sub_size)
+            st.session_state.df_materail = df_materail
+
+    # Create search box widget for BASIC_MATERIAL
+    with col14:
+        search_basic_material = st.multiselect('BASIC_MATERIAL 선택', df_materail["BASIC_MATERIAL"].unique())
+        if search_basic_material:
+            df_materail = search_BASIC_MATERIAL_data(df_materail,search_basic_material)
+            st.session_state.df_materail = df_materail
+
+    # Create search box widget for RATING
+    with col15:
+        search_rating = st.text_input('RATING', value='', placeholder='Enter search term')
+        if search_rating != '': # 레이팅 검색
+            df_materail = search_RATING_data(df_materail,search_rating)
+            st.session_state.df_materail = df_materail
+
+    # Create search box widget for SPEC_CLASS
+    with col16:
+        search_class = st.multiselect('SPEC_CLASS 선택', df_materail["SPEC_CLASS"].unique())
+        if search_class:
+            df_materail = search_SPEC_CLASS_data(df_materail,search_class)
+            st.session_state.df_materail = df_materail
+
+    # Create search Text 검색
+    search_list= st.text_input('자재내역 검색', value='', placeholder=' % 기호를 붙혀 검색수행 / 순서 상관없음. ex)A105%boss')
+    if search_list != '': # 자재내역 검색
+        df_materail = search_LIST_data(df_materail,search_list)
+        st.session_state.df_materail = df_materail
+
+    if not (search_item or search_size or search_sub_size or search_basic_material or search_rating or search_class or search_list):
+        st.write("Total", pd.DataFrame().shape[0])
+        st.write("wait for search..")
+    else:
+        st.write("Total", st.session_state.df_materail.shape[0])
+        edited_df_materail = st.data_editor(st.session_state.df_materail[:500], key='df_materail_editor',use_container_width=True, hide_index=True) # 
+
+    # 카트 추가 버튼 노말
+    if st.button('Add to cart'):
+        df_materail_cart = add_to_cart(edited_df_materail)
+        df_materail_cart = pd.concat([df_cart_foramt, df_materail_cart]).reset_index(drop=True)
+        st.session_state.Cart_dataframe = pd.concat([st.session_state.Cart_dataframe, df_materail_cart]).reset_index(drop=True)
+        st.toast('success!', icon="✅")
+
+with tab2:
+    # Create search box widget for Ai search
+    st.subheader('_Search Pro_ :blue[Ai] :fire:')
+
+    df_materail_ = df_materail_original
+
+    col21, col22, col23, col24, col25, col26 = st.columns(6)
+
+    # Create search box widget for ITEM
+    with col21:
+        search_item_ = st.multiselect('ITEM 선택_', df_materail_["ITEM"].unique()) #
+        if search_item_:
+            df_materail_ = search_ITEM_data(df_materail_,search_item_)
+
+    # Create search box widget for SIZE
+    with col22:
+        search_size_ = st.selectbox('SIZE_', ["All"] + sort_size(df_materail_["SIZE"]))
+        if search_size_ != "All":
+            df_materail_ = search_SIZE_data(df_materail_,search_size_)  
+
+    # Create search box widget for SUB_SIZE
+    with col23:
+        search_sub_size_ = st.selectbox('SUB_SIZE_', ["All"] + sort_size(df_materail_["SUB_SIZE"]))
+        if search_sub_size_ != "All": # 사이즈2 검색
+            df_materail_ = search_SUB_SIZE_data(df_materail_,search_sub_size_)
+
+    # Create search box widget for BASIC_MATERIAL
+    with col24:
+        search_basic_material_ = st.multiselect('BASIC_MATERIAL 선택_', df_materail_["BASIC_MATERIAL"].unique())
+        if search_basic_material_:
+            df_materail_ = search_BASIC_MATERIAL_data(df_materail_,search_basic_material_)
+
+    # Create search box widget for RATING
+    with col25:
+        search_rating_ = st.text_input('RATING_', value='', placeholder='Enter search term')
+        if search_rating_ != '': # 레이팅 검색
+            df_materail_ = search_RATING_data(df_materail_,search_rating_)
+
+    # Create search box widget for SPEC_CLASS
+    with col26:
+        search_class_ = st.multiselect('SPEC_CLASS 선택_', df_materail_["SPEC_CLASS"].unique())
+        if search_class_:
+            df_materail_ = search_SPEC_CLASS_data(df_materail_,search_class_)
+
+    Ai_search_List = st.text_input('자재내역 Ai 검색', value='', placeholder='ex) 4inch%smls%A106%pipe....')
+    st.write("*:white_check_mark: *검색이 안될 시, 상단 Item 및 Size 선택 후 검색*")
+
+    # 초기화
+    if 'df_materail_pro' not in st.session_state:
+        st.session_state.df_materail_pro = pd.DataFrame()
+
+    if st.button('검색'):
+        if Ai_search_List != "":
+            if search_item_ != "" and search_size_ != "All" : # 아이템이 공란이 아니고, 사이즈가 올이 아닐때
+                Ai_search_List = "%".join([str(search_item_[0])] + [search_size_ + "B"] + [Ai_search_List])
+                df_materail_pro, search_term_processing = Ai_search_ITEM_data(df_materail_, Ai_search_List)
+            else:
+                re.sub("\t", "%", Ai_search_List)
+                df_materail_pro, search_term_processing = Ai_search_ITEM_data_(df_materail_, Ai_search_List)
+                
+            st.write("%".join(search_term_processing))
+            df_materail_pro["Check"] = False
+            cols = list(df_materail_pro.columns)
+            cols.insert(0, cols.pop(cols.index("Check")))
+            df_materail_pro = df_materail_pro[cols]
+            st.session_state.df_materail_pro  = df_materail_pro
+            st.rerun()
+        else:
+            st.session_state.df_materail_pro = pd.DataFrame()
+            st.rerun()
+
+    # 인공지능 서치    
+    st.write("Total", st.session_state.df_materail_pro.shape[0])
+
+    edited_df_materail_pro = st.data_editor(st.session_state.df_materail_pro[:500], key='df_materail_pro_editor', use_container_width=True, hide_index=True) #####################
+
+    # 카트 추가 버튼 ai
+    if st.button('Add to cart.'):
+        df_materail_cart = add_to_cart(edited_df_materail_pro)
+        df_materail_cart = pd.concat([df_cart_foramt, df_materail_cart]).reset_index(drop=True)
+        st.session_state.Cart_dataframe = pd.concat([st.session_state.Cart_dataframe, df_materail_cart]).reset_index(drop=True)
+        st.toast('success!', icon="✅")
+
+with tab3:
+    # _vmi search_
+    st.subheader('_vmi Search Pro_ :man-running:')
+
+    df_vmi_materail = vmi_load_data()
+
+    # 초기화
+    if 'df_vmi_materail' not in st.session_state:
+        st.session_state.df_vmi_materail = df_vmi_materail
+
+    col31, col32, col33, col34 = st.columns(4)
+
+    # Create search box widget fo
+    with col31:
+        search_division = st.selectbox('구분', ["All"] + sorted(df_vmi_materail["구분"].unique()))
+        if search_division != "All": 
+            df_vmi_materail = df_vmi_materail[df_vmi_materail["구분"] == search_division]
+            df_vmi_materail.reset_index(drop=True, inplace=True)
+            st.session_state.df_vmi_materail = df_vmi_materail
+
+    # Create search box widget for BASIC_MATERIAL
+    with col32:
+        search_transaction = st.multiselect('거래선', df_vmi_materail["거래선"].unique())
+        if search_transaction:
+            df_vmi_materail = df_vmi_materail[df_vmi_materail["거래선"].isin(search_transaction)]
+            df_vmi_materail.reset_index(drop=True, inplace=True)
+            st.session_state.df_vmi_materail = df_vmi_materail
+            
+    # Create search box widget for BASIC_MATERIAL
+    with col33:
+        search_maker = st.multiselect('제조원', df_vmi_materail["제조원"].unique())
+        if search_maker:
+            df_vmi_materail = df_vmi_materail[df_vmi_materail["제조원"].isin(search_maker)]
+            df_vmi_materail.reset_index(drop=True, inplace=True)
+            st.session_state.df_vmi_materail = df_vmi_materail
+
+    # Create search box widget for 
+    with col34:
+        search_unit = st.selectbox('단위', ["All"] + sorted(df_vmi_materail["단위"].unique()))
+        if search_unit != "All":
+            df_vmi_materail = df_vmi_materail[df_vmi_materail["단위"] == search_unit]
+            df_vmi_materail.reset_index(drop=True, inplace=True)
+            st.session_state.df_vmi_materail = df_vmi_materail
+
+    col35, col36 = st.columns(2)
+    with col35:
+        # Create search box widget for LIST
+        search_vmi_mat_1= st.text_input('자재내역 검색.', value='', placeholder=' % 기호를 붙혀 검색수행 / 순서 상관없음. ex)A105%boss')
+        if search_vmi_mat_1 != '': # 자재내역 검색
+            df_vmi_materail = search_LIST_data(df_vmi_materail,search_vmi_mat_1)
+            st.session_state.df_vmi_materail = df_vmi_materail
+
+    with col36:
+        search_vmi_mat_2= st.text_input('상세스펙 검색.', value='', placeholder=' % 기호를 붙혀 검색수행 / 순서 상관없음. ex)A105%boss')
+        if search_vmi_mat_2 != '': # 자재내역 검색
+            df_vmi_materail = search_LIST_data(df_vmi_materail,search_vmi_mat_2)
+            st.session_state.df_vmi_materail = df_vmi_materail
+
+    if not (search_division != "All" or search_transaction or search_maker or search_unit != "All" or search_vmi_mat_1 or search_vmi_mat_2):
+        st.session_state.df_vmi_materail = df_vmi_materail
+        st.write("Total", st.session_state.df_vmi_materail.shape[0])
+        edited_df_vmi_materail= st.data_editor(st.session_state.df_vmi_materail[:500], key='df_vmi_materail_editor', use_container_width=True, hide_index=True) #####################
+    else:
+        st.write("Total", st.session_state.df_vmi_materail.shape[0])
+        edited_df_vmi_materail= st.data_editor(st.session_state.df_vmi_materail[:500], key='df_vmi_materail_editor', use_container_width=True, hide_index=True) #####################
+
+    # 카트 추가 버튼 노말
+    if st.button('Add to cart..'):
+        df_materail_cart = add_to_cart(edited_df_vmi_materail)
+        df_materail_cart = pd.concat([df_cart_foramt, df_materail_cart]).reset_index(drop=True)
+        st.session_state.Cart_dataframe = pd.concat([st.session_state.Cart_dataframe, df_materail_cart]).reset_index(drop=True)
+        st.toast('success!', icon="✅")
+
+with tab4:
+    
+    col41, col42, col43 = st.columns([1,1,1])
+    with col41:
+        # _Search Pro_
+        st.subheader('_B/Nut Sets(B7)_')
+        
+        df_bnuts = pd.read_excel("/home/dataiku/workspace/code_studio-versioned/streamlit/docs/dummys/bolt_b7_list.xlsx")
+        df_bnuts["Check"] = False
+        cols = list(df_bnuts.columns)
+        cols.insert(0, cols.pop(cols.index("Check")))
+        df_bnuts = df_bnuts[cols]
+            
+        search_bolt_size_ = sac.buttons([
+            sac.ButtonsItem(label='1/2"'),
+            sac.ButtonsItem(label='5/8"'),
+            sac.ButtonsItem(label='3/4"'),
+            sac.ButtonsItem(label='7/8"'),
+            sac.ButtonsItem(label='1"'),
+            sac.ButtonsItem(label='1-1/8"'),
+            sac.ButtonsItem(label='1-1/4"'),
+            sac.ButtonsItem(label='1-5/8"')
+            ], align='start')
+
+        df_bnuts = search_bolt_SIZE_data(df_bnuts,search_bolt_size_)  
+
+        edited_df_bnuts = st.data_editor(df_bnuts, key='df_bnuts_editor', height=600, use_container_width=True, hide_index=True)
+
+        # 카트 추가 버튼 ai
+        if st.button('Add to cart...'):
+            df_materail_cart = add_to_cart(edited_df_bnuts)
+            df_materail_cart = pd.concat([df_cart_foramt, df_materail_cart]).reset_index(drop=True)
+            st.session_state.Cart_dataframe = pd.concat([st.session_state.Cart_dataframe, df_materail_cart]).reset_index(drop=True)
+            st.toast('success!', icon="✅")
+
+    with col42:
+
+        st.subheader('_Gaskets(S/W)_')
+        
+        df_Gaskets = pd.read_excel("/home/dataiku/workspace/code_studio-versioned/streamlit/docs/dummys/gasket_list.xlsx")
+        df_Gaskets["Check"] = False
+        cols = list(df_Gaskets.columns)
+        cols.insert(0, cols.pop(cols.index("Check")))
+        df_Gaskets = df_Gaskets[cols]
+        
+        col421, col422 = st.columns(2)
+        with col421:
+            search_gasket_area_ = sac.buttons([
+                sac.ButtonsItem(label='304/304-GR/CS'),
+                sac.ButtonsItem(label='304/304-GR/304'),
+                sac.ButtonsItem(label='PTFE')
+                ], align='start')
+
+            def search_gasket_data(df,search_term):
+                search_df = df[df['분류'] == search_term]
+                search_df.reset_index(drop=True, inplace=True)
+                return search_df
+
+            df_Gaskets = search_gasket_data(df_Gaskets,search_gasket_area_)  
+
+        with col422:
+            search_gasket_rating_ = sac.buttons([
+                sac.ButtonsItem(label='150#'),
+                sac.ButtonsItem(label='300#'),
+                sac.ButtonsItem(label='600#')
+                ], align='start')
+
+            def search_gasket_rating_data(df,search_term):
+                search_df = df[df['RATING'] == search_term]
+                search_df.reset_index(drop=True, inplace=True)
+                return search_df
+
+            df_Gaskets = search_gasket_rating_data(df_Gaskets,search_gasket_rating_)  
+
+        edited_df_Gasket = st.data_editor(df_Gaskets, key='df_Gasket_editor', height=600, use_container_width=True, hide_index=True)
+
+        # 카트 추가 버튼 ai
+        if st.button('Add to cart....'):
+            df_materail_cart = add_to_cart(edited_df_Gasket)
+            df_materail_cart = pd.concat([df_cart_foramt, df_materail_cart]).reset_index(drop=True)
+            st.session_state.Cart_dataframe = pd.concat([st.session_state.Cart_dataframe, df_materail_cart]).reset_index(drop=True)
+            st.toast('success!', icon="✅")        
+
+    with col43:
+        def search_dummy_data(df,search_term):
+            search_df = df[df['분류'] == search_term]
+            search_df.reset_index(drop=True, inplace=True)
+            return search_df
+
+        st.subheader('_Dummy Code_')
+        
+        df_Dummy = pd.read_excel("/home/dataiku/workspace/code_studio-versioned/streamlit/docs/dummys/DUMMY_CODE.xlsx")
+        df_Dummy["Check"] = False
+        cols = list(df_Dummy.columns)
+        cols.insert(0, cols.pop(cols.index("Check")))
+        df_Dummy = df_Dummy[cols]
+            
+        search_area_ = sac.buttons([
+            sac.ButtonsItem(label='계전/전기'),
+            sac.ButtonsItem(label='기계'),
+            sac.ButtonsItem(label='배관')
+            ], align='start')
+
+        df_Dummy = search_dummy_data(df_Dummy,search_area_)  
+
+        edited_df_Dummy = st.data_editor(df_Dummy, key='df_Dummy_editor', height=600, use_container_width=True, hide_index=True)
+
+        # 카트 추가 버튼 ai
+        if st.button('Add to cart.....'):
+            df_materail_cart = add_to_cart(edited_df_Dummy)
+            df_materail_cart = pd.concat([df_cart_foramt, df_materail_cart]).reset_index(drop=True)
+            st.session_state.Cart_dataframe = pd.concat([st.session_state.Cart_dataframe, df_materail_cart]).reset_index(drop=True)
+            st.toast('success!', icon="✅")
+
+with tab5:
+    # 장바구니 타이틀 추가
+    st.subheader('_Cart List_ :shopping_trolley:') 
+
+    # Reset Cart 버튼
+    if st.button('Reset Cart'):
+        df_materail_cart = df_start_cart
+        st.session_state.Cart_dataframe = df_start_cart
+        st.toast('success!', icon="✅")
+
+    # 장바구니 프레임
+    edited_cart_df_materail = edited_cart_df_materail(st.session_state.Cart_dataframe)
+
+    # 카트 Save_ 버튼
+    if st.button('Save'):
+        st.session_state.Cart_dataframe = edited_cart_df_materail
+        st.toast('success!', icon="✅")
+
+    # Download 장바구니 버튼
+    with open("cart_list.xlsx", 'rb') as my_file:
+        st.session_state.Cart_dataframe.to_excel('cart_list.xlsx', index=False)
+        add_rows_to_excel('cart_list.xlsx')
+        st.download_button(label = 'Download Cart :white_check_mark:', data = my_file, file_name = 'cart_list.xlsx', mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    # 카트 Save_ 버튼
+    if st.button('lamp(m) 불출서'):
+        st.write("기능개발중")
+
+with tab6:
+    # Create Bulk Data button 추가
+    st.subheader('_Bulk Data Upload_')
+
+    # 벌크 차트 프레임 생성 
+    default_data_bulk = {
+            'ITEM': ["PIPE"],
+            'SIZE': ["3"],
+            '자재내역': ["smls%304%sh10"], 
+        }
+    df_materail_bulk = pd.DataFrame(default_data_bulk)
+
+    # Create Bulk 업로드 파일 추가
+    uploaded_files = st.file_uploader("Bulk Data Upload", accept_multiple_files=True)
+    if st.button('Input to Bulk list'):
+        for uploaded_file in uploaded_files:
+            if uploaded_file.name.endswith('.csv'):
+                df_materail_bulk_sum = pd.read_csv(uploaded_file)
+            elif uploaded_file.name.endswith('.xlsx'):
+                df_materail_bulk_sum = pd.read_excel(uploaded_file)
+            else:
+                st.warning(f"{uploaded_file.name} is not a valid file type. Only CSV and Excel files are allowed.")
+                continue
+            df_materail_bulk = pd.concat([df_materail_bulk, df_materail_bulk_sum], ignore_index=True)
+        st.session_state.df_materail_bulk_list = df_materail_bulk
+
+    elif uploaded_files is None:
+        st.session_state.df_materail_bulk_list = pd.DataFrame(default_data_bulk)
+
+    # Download 업로드 포멧 button
+    with open("format.xlsx", 'rb') as my_file:
+        df_materail_format = pd.DataFrame({"ITEM": ["pipe"], "SIZE": [2], "자재내역": ["smls, sch10, 304L, pe"]}, index=[0])
+        df_materail_format.to_excel('format.xlsx', index=False)
+        st.download_button(label = 'Download format', data = my_file, file_name = 'format.xlsx', mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    # 벌크데이터 타이틀 추가
+    st.header('Bulk List :clock230: :sweat_smile:')
+
+    if 'edited_bulk_df_materail' not in locals():
+        edited_bulk_df_materail = pd.DataFrame(default_data_bulk)
+
+    # bulk list 초기화
+    if 'df_materail_bulk_list' not in st.session_state:
+        st.session_state.df_materail_bulk_list = pd.DataFrame(default_data_bulk)
+
+    # bulk search 버튼
+    if st.button('Bulk Search :hourglass:'):
+        st.session_state.df_materail_bulk_list.to_excel('bulk_list.xlsx', index=False)
+        df_bulk_searchs = pd.read_excel('bulk_list.xlsx')
+        df_materail_bulk_finded = find_codes(df_bulk_searchs, df_materail_original)
+        st.session_state.df_materail_bulk_list = df_materail_bulk_finded
+        st.toast('success!', icon="✅")
+
+    # bulk list mfpdla
+    edited_bulk_df_materail = st.data_editor(st.session_state.df_materail_bulk_list, num_rows="dynamic", key='bulk_editor', use_container_width=True,hide_index=True, 
+                                                    column_config={
+                                                        "ITEM": st.column_config.TextColumn(
+                                                            ),
+                                                        "SIZE": st.column_config.NumberColumn( 
+                                                            ),
+                                                        "자재내역": st.column_config.TextColumn(
+                                                            ),
+                                                        }
+                                                    )
+
+    # bulk list Save_ 버튼
+    if st.button('Save_'):
+        st.session_state.df_materail_bulk_list = edited_bulk_df_materail
+        st.toast('success!', icon="✅")
+
+    # Bulk Download Excel 버튼
+    with open("bulk_list.xlsx", 'rb') as my_file:
+        st.session_state.df_materail_bulk_list.to_excel('bulk_list.xlsx', index=False)
+        add_rows_to_excel('bulk_list.xlsx')
+        st.download_button(label = 'Download Bulk :white_check_mark:', data = my_file, file_name = 'bulk_list.xlsx', mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+with tab7:
+    st.markdown(
+            """
+            ### _UPLOAD_ :
+            *Lamp (M) ▶️ 작업계획수립 ▶️ '+자재추가' ▶️ '업로드' ▶️ 🧾업로드 👈클릭* \n 
+            ✅ Cart List 다운로드 후 별도의 잔여 컬럼을 삭제하지 않으셔도 됩니다. \n
+            ✅ Cart List 다운로드시, 엑셀파일에서 첫 3행이 공란으로 추가됩니다. ※ *Lamp(M) 업로드 시 4행부터 Count 실시* \n
+            ✅ 추후, 자동으로 통지에 있는 설비 Tag 와 설비 ID 가 입력되도록 반영 개선 예정입니다.\n
+            ※ *현재는, 통지에 물려있는 동일한 설비 ID 와 Tag No 를 입력해야 함.* \n
+            """
+            )
+    st.image(
+        "/home/dataiku/workspace/code_studio-versioned/streamlit/docs/exp/cart_guide_2.png",
+        use_column_width=True,
+        caption='*Lamp (m) - 통지 작업계획수립 화면*'
+    )
+
+    st.markdown(
+            """
+            <파일 내부 상세>
+            """
+            )
+    st.image(
+        "/home/dataiku/workspace/code_studio-versioned/streamlit/docs/exp/cart_guide_1.png",
+        use_column_width=True,
+        caption='*Lamp (m) - 엑셀파일 양식 참고*'
+    )
