@@ -1,0 +1,597 @@
+import pandas as pd
+import streamlit as st
+from PIL import Image
+import streamlit_antd_components as sac
+import streamlit_antd_components as sac
+import numpy as np
+import sys
+import openpyxl
+from openpyxl import load_workbook
+import fitz  # PyMuPDF
+import re
+import os
+import pickle
+import tempfile
+import dataiku
+import math
+import io
+from io import BytesIO
+from datetime import datetime, timedelta
+
+from function_search import all_add_data
+from function_search import add_to_cart
+from function_search import add_rows_to_excel
+from function_search import cart_foramt
+from function_search import boom_format
+from function_search import fst_line
+from function_search import plant_load_data
+from function_search import default_data_df
+from function_search import edited_cart_df_materail
+
+pd.options.display.float_format = '{:.0f}'.format
+
+# 초기화
+if 'Cart_dataframe' not in st.session_state:
+    st.session_state.Cart_dataframe = pd.DataFrame()
+
+@st.cache_data
+def get_folder_paths():
+    FOLDER = dataiku.Folder("ezuSeiHz")
+    list_files = []
+    for list_file in FOLDER.list_paths_in_partition():
+        if list_file.endswith(".xlsx"):
+            list_files.append(list_file)
+
+    folder_paths = []
+    for file_path in list_files:
+        folder_path = os.path.dirname(file_path)
+        folder_paths.append(folder_path)
+
+    return folder_paths, list_files, FOLDER
+folder_paths, list_files, FOLDER = get_folder_paths()
+
+@st.cache_data()
+def convert_dir_to_tree(folder_paths):
+    tree_items = []  # This will store the converted tree items.
+    group_items = {}  # This will store the group items.
+
+    for file_path in folder_paths:
+        # Split the path into parts
+        parts = file_path.strip("/").split("/")
+        group_name = parts[0]  # The first part is always the group name
+
+        # Ensure group item exists
+        group_item = group_items.get(group_name)
+        if group_item is None:
+            group_item = sac.TreeItem(group_name, disabled=True, children=[])
+            tree_items.append(group_item)
+            group_items[group_name] = group_item
+
+        # Iterate through the rest of the parts to build the tree structure
+        current_item = group_item
+        for folder_name in parts[1:]:
+            # Check if the folder item already exists under the current item
+            folder_item = None
+            for child_item in current_item.children:
+                if child_item.label == folder_name:
+                    folder_item = child_item
+                    break
+
+            # If the folder item doesn't exist, create and append it
+            if folder_item is None:
+                folder_item = sac.TreeItem(folder_name, children=[])
+                current_item.children.append(folder_item)
+            
+            # Move the current item pointer to the new or found folder item
+            current_item = folder_item
+    return tree_items
+tree_items = convert_dir_to_tree(folder_paths)
+
+def search_tree_factory(tree_items, query):
+    # Filter top-level items that contain the query in their label
+    filtered_items = []
+    for item in tree_items:
+        if query.lower() in item.label.lower():  # Case-insensitive search
+            filtered_items.append(item)
+    return filtered_items
+
+def search_tree_items(tree_items, query):
+    # 검색어가 포함된 항목만 필터링
+    filtered_items = []
+    for item in tree_items:
+        if query.lower() in item.label.lower():  # 대소문자 구분 없이 검색
+            filtered_items.append(item)
+        else:
+            # 자식 항목 중에서 검색
+            child_matches = search_tree_items(item.children, query)
+            if child_matches:
+                new_item = sac.TreeItem(item.label, disabled=True, children=child_matches)
+                filtered_items.append(new_item)
+    return filtered_items
+
+@st.cache_data()
+def convert_outlines_to_tree(outlines, parent_level=1):
+    tree_items = []  # This will store the converted tree items.
+    while outlines:
+        # Extract the first outline item
+        level, title, _ = outlines[0][:3]
+        
+        if level < parent_level:
+            # If the current level is lower than the parent's, break from the loop
+            break
+        elif level > parent_level:
+            # If the current level is deeper, recursively process the nested items
+            # Assuming the last item in the list is the parent
+            if tree_items:
+                tree_items[-1].children = convert_outlines_to_tree(outlines, level)
+        else:
+            # Remove the processed item from outlines
+            outlines.pop(0)
+            # Create a new TreeItem and add it to the list
+            item = sac.TreeItem(title, children=[])
+            tree_items.append(item)
+
+    return tree_items
+
+############################################################################################################################################################################################################################
+
+# 사이드바
+with st.sidebar:
+
+    if "plant" not in st.session_state:
+        st.session_state.plant = "All"
+        st.session_state.email = "biliy@lgchem.com"
+        now = datetime.now()
+        future_date = now + timedelta(days=2)
+        future_date = future_date.strftime('%Y%m%d')
+        st.session_state.future_date = future_date
+        st.session_state.now = now
+        st.session_state.save_point = "9600"
+
+    st.write(f"Plant: {st.session_state.plant}")
+    st.write(f"Email: {st.session_state.email}")
+    st.write(f"저장위치: {st.session_state.save_point}")
+    st.write(f"Today: {st.session_state.now.strftime('%Y.%m.%d')}")
+
+    sac.divider(label='Search Tag No', align='center', color='gray')
+
+    if st.session_state.plant != "All":
+        tree_items = search_tree_factory(tree_items, st.session_state.plant)
+    
+    search_query = st.text_input("Search Tag No.", placeholder='Tag No. 를 입력해주세요 "/" 를 통해 구분 가능')
+
+    trees_swich = sac.switch(label='Check Active', align='end', size='md')
+
+    if trees_swich is not True:
+        if search_query == "":
+            Item_ = sac.tree(
+                items = tree_items,
+                label='Tag No.',
+                color='#4682b4',
+                # size='xm',
+                index=0,
+                width=400, 
+                height=300,
+                key='tree',
+                show_line=False,
+                open_all=False,
+                checkbox=False,
+                return_index=False,
+                checkbox_strict = False
+                )
+
+        if search_query != "":
+            if "/" in search_query:
+                search_query_lists = search_query.split("/")
+                for i in range(len(search_query_lists)):
+                    tree_items = search_tree_items(tree_items, search_query_lists[i])
+
+            else:
+                tree_items = search_tree_items(tree_items, search_query)
+            
+            Item_ = sac.tree(
+                items = tree_items,
+                label='Tag No.',
+                color='#4682b4',
+                # size='xm',
+                index=0,
+                width=400, 
+                height=300,
+                show_line=False,
+                open_all=True,
+                checkbox=False,
+                return_index=False,
+                checkbox_strict = False
+                )
+
+    else:
+        if search_query == "":
+            Item_ = sac.tree(
+                items = tree_items,
+                label='Tag No.',
+                color='#4682b4',
+                # size='xm',
+                # index=0,
+                width=400, 
+                height=300,
+                show_line=False,
+                open_all=False,
+                checkbox=True,
+                return_index=False,
+                checkbox_strict = False
+                )
+
+        if search_query != "":
+            if "/" in search_query:
+                search_query_lists = search_query.split("/")
+                for i in range(len(search_query_lists)):
+                    tree_items = search_tree_items(tree_items, search_query_lists[i])
+
+            else:
+                tree_items = search_tree_items(tree_items, search_query)
+            
+            Item_ = sac.tree(
+                items = tree_items,
+                label='Tag No.',
+                color='#4682b4',
+                # size='xm',
+                # index=0,
+                width=400, 
+                height=300,
+                show_line=False,
+                open_all=True,
+                checkbox=True,
+                return_index=False,
+                checkbox_strict = False
+                )
+
+        if st.button("All Add to cart"):
+            for item in Item_:
+                for k in range(len(folder_paths)):
+                    if item == folder_paths[k].split("/")[-1]:
+                        concat_list_path = f"{folder_paths[k]}/{item}.xlsx"
+                        df_concat = all_add_data(concat_list_path)
+                        df_cart_foramt = cart_foramt()
+                        df_materail_cart = pd.concat([df_cart_foramt, df_concat]).reset_index(drop=True)
+                        df_materail_cart = df_materail_cart
+                        st.session_state.Cart_dataframe = pd.concat([st.session_state.Cart_dataframe, df_materail_cart]).reset_index(drop=True)
+            st.toast('success!', icon="✅")
+
+    sac.divider(label='end', align='center', color='gray')
+
+    if Item_ and isinstance(Item_, str) != True: # 타이틀이 리스트로 표기되면
+        st.session_state.Item_ = Item_[0]
+    else: 
+        st.session_state.Item_ = Item_ # 타이틀이 문자열이면
+
+    # 폴더 패스
+    if st.session_state.Item_ is not None and not isinstance(st.session_state.Item_, list):
+        Item_ = st.session_state.Item_.split(".")[0]
+    else:
+        st.write("검색 결과를 찾을 수 없습니다.")
+        sys.exit()
+    
+    for index, path in enumerate(folder_paths):
+        if Item_ in path:
+            tag_index = index
+            break
+
+    df_boom_list_path = f"{list_files[tag_index]}"
+
+        
+############################################################################################################################################################################################################################
+
+# 탭 생성
+tab1, tab2, tab3, tab4 = st.tabs(["Special Code","Ref.PDF","Cart list","Help"])
+
+
+
+with tab1:
+
+    st.subheader("_Special Code list_")
+    st.write(df_boom_list_path)
+
+    with FOLDER.get_download_stream(df_boom_list_path) as f:
+        df_boom_list = pd.read_excel(f.read(), engine='openpyxl')
+
+    if Item_ is not None:
+        if len(df_boom_list.index) == 0:
+            df_boom_list = pd.concat([boom_format(), default_data_df(df_boom_list_path)]).reset_index(drop=True)
+        
+        df_boom_list = pd.concat([fst_line(), df_boom_list]).reset_index(drop=True)
+        df_boom_list = df_boom_list.astype(str)
+
+        df_boom_list["Check"] = False
+        cols = list(df_boom_list.columns)
+        cols.insert(0, cols.pop(cols.index("Check")))
+        df_boom_list = df_boom_list[cols]
+
+        edited_df_boom_list = st.data_editor(df_boom_list[1:],
+                                            key='edited_key1',
+                                            use_container_width=True,
+                                            column_config={
+                                                "Check" : st.column_config.CheckboxColumn(
+                                                    width = 0.001,
+                                                    default = "False"),
+                                                "요청구분" : st.column_config.NumberColumn(
+                                                    format = "%d",
+                                                    width = 0.01,
+                                                    help = "구매자재 = 1 , 예약자재 = 2"),
+                                                "자재코드" : st.column_config.NumberColumn(
+                                                    format = "%d",
+                                                    help = "ERP 코드",
+                                                    width = 0.01),
+                                                "요청수량" : st.column_config.NumberColumn(
+                                                    format = "%d",
+                                                    width = 0.01),
+                                                "Description" : st.column_config.Column(
+                                                    width = 1200),
+                                                "설비태그번호" : st.column_config.Column(
+                                                    width = 0.01),
+                                                "설비ID" : st.column_config.NumberColumn(
+                                                    format = "%d",
+                                                    width = 0.01),
+                                                "model_no" : st.column_config.Column(
+                                                    width = 0.01,
+                                                    help = "설비 Model No. 입력"),
+                                                "maker" : st.column_config.Column(
+                                                    "Sub_Vendor",
+                                                    width = 0.01,
+                                                    help = "자재 납품 밴더를 입력해주시기 바랍니다."),
+                                                "dwg_no" : st.column_config.Column(
+                                                    width = 0.01,
+                                                    help = "도면 No. 입력"),
+                                                "item_no" : st.column_config.Column(
+                                                    width = 0.01,
+                                                    help = "도면 내, 자재번호. 입력"),
+                                                "part_no" : st.column_config.Column(
+                                                    width = 0.01,
+                                                    help = "자재 파트 No. 입력")
+                                                },
+                                            num_rows="dynamic", 
+                                            )
+
+    # 데이터 저장 버튼
+    if st.button('Save'):
+        try:
+            buf = io.BytesIO()
+            edited_df_boom_list.to_excel(buf, index=False)
+            FOLDER.upload_stream(df_boom_list_path, buf.getvalue())
+            buf.close()
+            st.toast('success!', icon="✅")
+        except Exception as e:
+            st.error(f'데이터 저장 중 오류가 발생했습니다: {e}')     
+
+    # 초기화
+    if 'Cart_dataframe' not in st.session_state:
+        st.session_state.Cart_dataframe = pd.DataFrame()
+
+    # 카트 추가 버튼 노말
+    if st.button('Add to cart'):
+        df_materail_cart = add_to_cart(edited_df_boom_list)
+        df_cart_foramt = cart_foramt()
+        df_materail_cart = pd.concat([df_cart_foramt, df_materail_cart]).reset_index(drop=True)
+        st.session_state.Cart_dataframe = pd.concat([st.session_state.Cart_dataframe, df_materail_cart]).reset_index(drop=True)
+        st.toast('success!', icon="✅")
+
+    # Download Excel 버튼
+    with FOLDER.get_download_stream(df_boom_list_path) as f:
+        data = f.read()
+        st.download_button(label = 'Download boom list :white_check_mark:', data = data, file_name = df_boom_list_path, mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+with tab2:
+    # 드로잉
+    st.subheader("_Drawing Viewing_")
+
+    # PDF 셀렉션
+    item_folder = df_boom_list_path.rsplit('/', 1)[0]  
+    
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_file_list = []
+        for path in FOLDER.list_paths_in_partition():
+            if path.startswith(item_folder) and path.endswith(".pdf"):
+                with FOLDER.get_download_stream(path) as f:
+                    with open(os.path.join(temp_dir, path.split("/")[-1]), "wb") as temp_file:
+                        temp_file.write(f.read())
+                        temp_file_list.append(temp_file)
+                        
+        pdf_list = os.listdir(temp_dir)
+
+        if len(pdf_list) != 0:
+            pdf_name_index = pdf_list.index(st.selectbox("📑 PDF 선택", pdf_list))
+
+            st.write(os.path.join(item_folder, pdf_list[pdf_name_index]))
+            # Download Excel 버튼
+            with FOLDER.get_download_stream(os.path.join(item_folder, pdf_list[pdf_name_index])) as f:
+                data = f.read()
+                st.download_button(label = 'Download_', data = data, file_name = pdf_list[pdf_name_index], mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+            temp_file = temp_file_list[pdf_name_index]
+            doc = fitz.open(temp_file)
+
+            # 아웃라인(목차) 추출
+            outlines = doc.get_toc(simple=False)
+
+            unique_key = []
+            for outline in outlines:
+                _ , title, page = outline[:3]
+                unique_key.append({title: page})
+
+            # Convert your document outlines to a tree structure
+            tree_items_outlines = convert_outlines_to_tree(outlines)
+
+    if len(pdf_list) != 0:
+        page_number = 0
+        if "page_number" not in st.session_state:
+            st.session_state.page_number = 0
+
+        page_number_new = 0
+        if 'page_number_new' not in st.session_state:
+            st.session_state.page_number_new = 0
+
+        rotation = 0
+        if 'rotation' not in st.session_state:
+            st.session_state.rotation = 0
+
+        
+        col3, col4 = st.columns((1, 4))
+        with col3:# 페이지 이동 버튼
+            # 지정 페이지로 이동하는 텍스트 입력
+            st.write("## Go to Page")
+            page_input = st.text_input("Enter page number:",placeholder = "clearing for page-move", value="", key="input")
+            if page_input:
+                try:
+                    page_ = int(page_input) - 1 # 사용자 입력을 페이지 번호로 변환 (0 기반 인덱싱)
+                    if 0 <= page_number < len(doc):
+                        st.session_state.page_number = page_
+                    else:
+                        st.error("Page number out of range.")
+                except ValueError:
+                    st.error("Please enter a valid page number.")
+            # 아웃라인 네비게이션
+            st.write("## Navigation")
+            
+            # Use the tree_items in your sac.tree
+            title = sac.tree(
+                items=tree_items_outlines,
+                label='PDF Outlines',
+                open_all=True,
+                size='md',
+                checkbox_strict=True
+            )
+            
+            # 현재 페이지 타이틀 표기
+            if title and isinstance(title, str) == False: # 타이틀이 리스트로 표기되면
+                st.session_state.title = title[0]
+                st.write(st.session_state.title)
+            else: 
+                st.session_state.title = title # 타이틀이 문자열이면
+                st.write(st.session_state.title)
+
+            # Initialize a variable to hold the page number
+            if page_input == "":
+                # Search for the title in the list of dictionaries
+                for unique_dict in unique_key:
+                    if st.session_state.title in unique_dict:
+                        page_number_new = unique_dict[st.session_state.title]
+                        break  # Exit the loop once the title is found
+                if st.session_state.page_number_new != page_number_new: #값이 변경 되면 
+                    st.session_state.page_number_new = page_number_new
+                    st.session_state.page_number = st.session_state.page_number_new - 1
+
+        with col4:
+            col1, col2 = st.columns(2)
+            with col1:# 페이지 이동 버튼
+                if st.button('Previous Page'):
+                    page_number_ = st.session_state.page_number - 1
+                    st.session_state.page_number = max(0, page_number_)
+                # 페이지 회전 버튼
+                if st.button("Rotate -90° :arrow_right_hook:"):
+                    st.session_state.rotation -= 90
+                
+            with col2: # 페이지 이동 버튼
+                if st.button('Next Page'):
+                    page_number_ = st.session_state.page_number + 1
+                    st.session_state.page_number = min(len(doc) - 1, page_number_)
+                # 페이지 회전 버튼
+                if st.button("Rotate 90° :leftwards_arrow_with_hook:"):
+                    st.session_state.rotation += 90
+
+            # 현재 페이지 로드 및 표시
+            if st.session_state.page_number is not None:
+                current_page_number = st.session_state.page_number
+                pages_to_show = [current_page_number]
+                if current_page_number < len(doc) - 1:  # 다음 페이지가 존재하는 경우 추가
+                    pages_to_show.append(current_page_number + 1)
+
+            # 이미지 변환에 사용할 스케일링 매트릭스 정의 (너비 확장)
+            scaling_matrix = fitz.Matrix(4.0, 4.0)  # 너비와 높이를 2배로 확장
+            rotation_matrix = scaling_matrix.prerotate(st.session_state.rotation)
+
+            # Display current page
+            if st.session_state.page_number < doc.page_count:
+                page = doc.load_page(st.session_state.page_number)
+                pix = page.get_pixmap(matrix=rotation_matrix)
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                st.image(img, caption=f"Page {st.session_state.page_number + 1}" , use_column_width=True)
+            else:
+                st.session_state.page_number = 0
+                page = doc.load_page(st.session_state.page_number)
+                pix = page.get_pixmap(matrix=rotation_matrix)
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                st.image(img, caption=f"Page {st.session_state.page_number + 1}" , use_column_width=True)
+    else:
+        st.write("저장되어있는 도면이 없습니다.")
+
+    #PDF 업로드 
+    st.markdown("### 📁 pdf Uplaod")
+    st.write("➡️ file Path : ",item_folder,"/ 'file_name'.pdf")
+    uploaded_files = st.file_uploader("PDF Upload", accept_multiple_files=True)
+
+    if st.button('💾 Upload'):
+        for uploaded_file in uploaded_files:
+            if uploaded_file.name.endswith('.pdf'):
+                PDF_file_data = uploaded_file.getvalue()
+                with BytesIO(PDF_file_data) as f:
+                    FOLDER.upload_stream(f'{item_folder}/{uploaded_file.name}', f)
+            else:
+                st.warning(f"{uploaded_file.name} is not a valid file type. Only PDF files are allowed.")
+                continue
+        st.sidebar.success(f"Created {item_folder}")
+
+with tab3:
+    # 장바구니 타이틀 추가
+    st.subheader("_Cart List_ 🛒")
+
+    # Reset Cart 버튼
+    if st.button('Reset Cart'):
+        df_materail_cart = pd.DataFrame()
+        st.session_state.Cart_dataframe = pd.DataFrame()
+        st.toast('success!', icon="✅")
+
+    # 장바구니 프레임
+    edited_cart_df_materail = edited_cart_df_materail(st.session_state.Cart_dataframe)
+
+    # 카트 Save_ 버튼
+    if st.button('Save_'):
+        st.session_state.Cart_dataframe = edited_cart_df_materail
+        st.toast('success!', icon="✅")
+
+    # Download Excel 버튼
+    with open("cart_list.xlsx", 'rb') as my_file:
+        st.session_state.Cart_dataframe.to_excel('cart_list.xlsx', index=False)
+        add_rows_to_excel('cart_list.xlsx')
+        st.download_button(label = 'Download Cart :white_check_mark:', data = my_file, file_name = 'cart_list.xlsx', mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    # 카트 Save_ 버튼
+    if st.button('lamp(m) 불출서'):
+        st.write("기능개발중")
+
+with tab4:
+    st.markdown(
+            """
+            ### _UPLOAD_ :
+            *Lamp (M) ▶️ 작업계획수립 ▶️ '+자재추가' ▶️ '업로드' ▶️ 🧾업로드 👈클릭* \n 
+            ✅ Cart List 다운로드 후 별도의 잔여 컬럼을 삭제하지 않으셔도 됩니다. \n
+            ✅ Cart List 다운로드시, 엑셀파일에서 첫 3행이 공란으로 추가됩니다. ※ *Lamp(M) 업로드 시 4행부터 Count 실시* \n
+            ✅ 추후, 자동으로 통지에 있는 설비 Tag 와 설비 ID 가 입력되도록 반영 개선 예정입니다.\n
+            ※ *현재는, 통지에 물려있는 동일한 설비 ID 와 Tag No 를 입력해야 함.* \n
+            """
+            )
+    st.image(
+        "/home/dataiku/workspace/code_studio-versioned/streamlit/docs/exp/cart_guide_2.png",
+        use_column_width=True,
+        caption='*Lamp (m) - 통지 작업계획수립 화면*'
+    )
+
+    st.markdown(
+            """
+            <파일 내부 상세>
+            """
+            )
+    st.image(
+        "/home/dataiku/workspace/code_studio-versioned/streamlit/docs/exp/cart_guide_1.png",
+        use_column_width=True,
+        caption='*Lamp (m) - 엑셀파일 양식 참고*'
+    )
