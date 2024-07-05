@@ -1,0 +1,156 @@
+import pandas as pd
+import streamlit as st
+import streamlit_antd_components as sac
+from PIL import Image
+import openpyxl
+from openpyxl import load_workbook
+import fitz  # PyMuPDF
+import re
+import os
+import tempfile
+import dataiku
+import io
+from io import BytesIO
+import math
+from datetime import datetime, timedelta
+import pickle
+
+@st.cache_data
+def plant_load_data():
+    #Folders
+    FOLDER = dataiku.Folder("aNiTUQPU")
+    list_files= FOLDER.list_paths_in_partition()
+    with FOLDER.get_download_stream("plant_master/plant_ori.xlsx") as f:
+        data = f.read()
+    df=pd.read_excel(data,engine='openpyxl')
+    df.applymap(lambda x: str(x))
+    df = df[df['설비상태'] != 'N']
+    df = df[df['설비평가여부'] != 'N']
+    df = df[df['계획자그룹명'] == '정비2팀']
+    df['플랜트'] = df['플랜트'].str.replace('YS01-', '')
+    df['설비클래스'] = df['설비클래스'].str.replace('\([^)]*\)', '')
+    df['설비클래스'] = df['설비클래스'].str.replace('/', ',')
+    df = df[["플랜트","설비카테고리","설비클래스","설비태그번호","설비ID","계획자그룹명","설비위험도","운전영향도","설비중요도", "설비신뢰도","설비보전전략"]]
+    df = df.sort_values(by='설비태그번호', ascending=True)
+    df = df.sort_values(by='설비클래스', ascending=True)
+    df = df.sort_values(by='설비카테고리', ascending=True)
+    df = df.sort_values(by='플랜트', ascending=True)
+    df.reset_index(drop=True, inplace=True) # 인덱스 리셋
+    df.to_excel("/home/dataiku/workspace/code_studio-versioned/streamlit/docs/plant/plant.xlsx",index=False)
+    return df
+plant = plant_load_data()
+
+@st.cache_data
+def convert_dir_to_tree(folder_paths):
+    tree_items = []  # This will store the converted tree items.
+    group_items = {}  # This will store the group items.
+
+    for file_path in folder_paths:
+        # Split the path into parts
+        parts = file_path.strip("/").split("/")
+        plant_name = parts[0]  # The first part is always the plant name
+        category = parts[1]  # The second part is always the category
+        class_ = parts[2]  # The third part is always the class
+        tag_number = parts[3]  # The fourth part is always the tag number
+
+        # Ensure plant item exists
+        plant_item = group_items.get(plant_name)
+        if plant_item is None:
+            plant_item = sac.TreeItem(plant_name, disabled=True,children=[])
+            tree_items.append(plant_item)
+            group_items[plant_name] = plant_item
+
+        # Ensure category item exists
+        category_item = None
+        for child_item in plant_item.children:
+            if child_item.label == category:
+                category_item = child_item
+                break
+        if category_item is None:
+            category_item = sac.TreeItem(category, disabled=True, children=[])
+            plant_item.children.append(category_item)
+
+        # Ensure class item exists
+        class_item = None
+        for child_item in category_item.children:
+            if child_item.label == class_:
+                class_item = child_item
+                break
+        if class_item is None:
+            class_item = sac.TreeItem(class_, disabled=True, children=[])
+            category_item.children.append(class_item)
+
+        # Ensure tag number item exists
+        tag_number_item = sac.TreeItem(tag_number, children=[])
+        class_item.children.append(tag_number_item)
+
+    return tree_items
+
+@st.cache_data
+def convert_dir_to_tree_pickle(df):
+    plant_paths = []
+    for i in range(len(df)):
+        plant_name = df["플랜트"][i]
+        category = df["설비카테고리"][i]
+        class_ = df["설비클래스"][i]
+        tag_number = df["설비태그번호"][i]
+        plant_path = '/' + plant_name + '/' + category + '/'+ class_ + '/' + tag_number
+        plant_paths.append(plant_path)
+
+    tree_items = convert_dir_to_tree(plant_paths)
+    with open('/home/dataiku/workspace/code_studio-versioned/streamlit/docs/plant/tree_items.pkl', 'wb') as f:
+        pickle.dump(tree_items, f) 
+    return plant_paths
+folder_paths = convert_dir_to_tree_pickle(plant)
+
+@st.cache_data
+def load_tree_pickle():
+    with open('/home/dataiku/workspace/code_studio-versioned/streamlit/docs/plant/tree_items.pkl', 'rb') as f:
+        tree_items = pickle.load(f)
+    return tree_items
+tree_items = load_tree_pickle()
+
+
+st.write("Total", plant.shape[0])
+st.dataframe(plant)
+
+# 사이드바
+with st.sidebar:
+
+    # 검색 기능을 위한 Streamlit 입력 필드 추가
+    search_query = st.text_input("Search Tag No.", "")
+
+    # 검색 결과에 따라 트리 항목 업데이트
+    tree_items = search_tree_items(tree_items, search_query)
+
+    Item_ = sac.tree(
+        items=tree_items,
+        label='Tag No.',
+        color='#4682b4',
+        size='xs',
+        index=0,
+        width=350, 
+        height=300,
+        show_line=False,
+        open_all=False,
+        checkbox=False,
+        return_index=False,
+        checkbox_strict = False
+        )
+
+    sac.divider(label='Streamlit File path', align='center', color='gray')
+
+    if not isinstance(Item_, list):
+        Item_ = Item_.split(".")[0]
+    else:
+        Item_ = Item_[0].split(".")[0]
+    
+    for index,path in enumerate(folder_paths):
+        if Item_ in path:
+            tag_index = index
+            break
+
+    df_boom_list_path = f"{folder_paths[tag_index]}"
+    st.write(df_boom_list_path) # 트리 경로
+
+
