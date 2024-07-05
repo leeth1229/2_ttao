@@ -1,0 +1,185 @@
+import streamlit as st
+import fitz  # PyMuPDF
+import streamlit_antd_components as sac
+import os
+import tempfile
+import dataiku
+
+st.set_page_config(
+    layout="wide",
+    page_title="PDF_Viewer",
+    page_icon="📑",
+)
+
+# #Folders
+FOLDER = dataiku.Folder("PPrygQ3Y")
+
+with tempfile.TemporaryDirectory() as temp_dir:
+
+    for path in FOLDER.list_paths_in_partition():
+
+        if path.endswith(".pdf"):
+
+            with FOLDER.get_download_stream(path) as f:
+                full_path = os.path.join(temp_dir, os.path.basename(path))
+                data = f.read()
+                with open(full_path, 'wb') as f:
+                    f.write(data)
+
+    pdf_list = os.listdir(temp_dir)
+    pdf_name = st.sidebar.selectbox("PDF 선택", pdf_list)
+    pdf_path = os.path.join(temp_dir, pdf_name)
+
+    # st.write(pdf_name)
+    # Download Excel 버튼
+    # with FOLDER.get_download_stream(os.path.join("/", pdf_name)) as f:
+    #     data = f.read()
+    #     st.download_button(label = 'Download', data = data, file_name = pdf_name, mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    # PDF 문서 열기
+    doc = fitz.open(pdf_path)
+
+# 아웃라인(목차) 추출
+outlines = doc.get_toc(simple=False)
+
+unique_key = []
+for outline in outlines:
+    _ , title, page = outline[:3]
+    unique_key.append({title: page})
+
+def convert_outlines_to_tree(outlines, parent_level=1):
+    tree_items = []  # This will store the converted tree items.
+    while outlines:
+        # Extract the first outline item
+        level, title, _ = outlines[0][:3]
+        
+        if level < parent_level:
+            # If the current level is lower than the parent's, break from the loop
+            break
+        elif level > parent_level:
+            # If the current level is deeper, recursively process the nested items
+            # Assuming the last item in the list is the parent
+            if tree_items:
+                tree_items[-1].children = convert_outlines_to_tree(outlines, level)
+        else:
+            # Remove the processed item from outlines
+            outlines.pop(0)
+            # Create a new TreeItem and add it to the list
+            item = sac.TreeItem(title, children=[])
+            tree_items.append(item)
+
+    return tree_items
+
+# Convert your document outlines to a tree structure
+tree_items = convert_outlines_to_tree(outlines)
+
+# 초기 세션 상태 설정
+title = "PURPOSE"
+if 'title' not in st.session_state:
+    st.session_state.title = "PURPOSE"
+    
+page_number = 0
+if 'page_number' not in st.session_state:
+    st.session_state.page_number = 0
+    
+page_number_new = 0
+if 'page_number_new' not in st.session_state:
+    st.session_state.page_number_new = 0
+
+rotation = 0
+if 'rotation' not in st.session_state:
+    st.session_state.rotation = 0
+
+# Streamlit 앱 타이틀
+st.title("PDF Viewer Navigation")
+
+# 사이드바에 아웃라인 선택 UI 개선 및 페이지 직접 이동
+with st.sidebar:
+    # 지정 페이지로 이동하는 텍스트 입력
+    st.write("## Go to Page")
+    page_input = st.text_input("Enter page number:",placeholder = "clearing for page-move", value="", key="input")
+    if page_input:
+        try:
+            page_ = int(page_input) - 1 # 사용자 입력을 페이지 번호로 변환 (0 기반 인덱싱)
+            if 0 <= page_number < len(doc):
+                st.session_state.page_number = page_
+            else:
+                st.error("Page number out of range.")
+        except ValueError:
+            st.error("Please enter a valid page number.")
+    
+    # 아웃라인 네비게이션
+    st.write("## Navigation")
+    
+    # Use the tree_items in your sac.tree
+    title = sac.tree(
+        items=tree_items,
+        label='PDF Outlines',
+        open_all=True,
+        size='md',
+        checkbox_strict=True
+    )
+    
+    # 현재 페이지 타이틀 표기
+    if title and isinstance(title, str) == False: # 타이틀이 리스트로 표기되면
+        st.session_state.title = title[0]
+        st.write(st.session_state.title)
+    else: 
+        st.session_state.title = title # 타이틀이 문자열이면
+        st.write(st.session_state.title)
+
+    # Initialize a variable to hold the page number
+    if page_input == "":
+        # Search for the title in the list of dictionaries
+        for unique_dict in unique_key:
+            if st.session_state.title in unique_dict:
+                page_number_new = unique_dict[st.session_state.title]
+                break  # Exit the loop once the title is found
+        if st.session_state.page_number_new != page_number_new: #값이 변경 되면 
+            st.session_state.page_number_new = page_number_new
+            st.session_state.page_number = st.session_state.page_number_new - 1
+    
+col1, col2 = st.columns(2)
+with col1:# 페이지 이동 버튼
+    if st.button('Previous Page'):
+        page_number_ = st.session_state.page_number - 1
+        st.session_state.page_number = max(0, page_number_)
+        # st.write(st.session_state.page_number+1)
+    # 페이지 회전 버튼
+    if st.button("Rotate -90° :arrow_right_hook:"):
+        st.session_state.rotation -= 90
+    
+with col2: # 페이지 이동 버튼
+    if st.button('Next Page'):
+        page_number_ = st.session_state.page_number + 1
+        st.session_state.page_number = min(len(doc) - 1, page_number_)
+        # st.write(st.session_state.page_number+1)
+    # 페이지 회전 버튼
+    if st.button("Rotate 90° :leftwards_arrow_with_hook:"):
+        st.session_state.rotation += 90
+
+# 현재 페이지 로드 및 표시qq
+if st.session_state.page_number is not None:
+    current_page_number = st.session_state.page_number
+    pages_to_show = [current_page_number]
+    if current_page_number < len(doc) - 1:  # 다음 페이지가 존재하는 경우 추가
+        pages_to_show.append(current_page_number + 1)
+
+# 이미지 변환에 사용할 스케일링 매트릭스 정의 (너비 확장)
+scaling_matrix = fitz.Matrix(2.0, 2.0)  # 너비와 높이를 2배로 확장
+rotation_matrix = scaling_matrix.prerotate(st.session_state.rotation)
+
+# 페이지 보이기
+cols = st.columns(len(pages_to_show))
+for idx, page_num in enumerate(pages_to_show):
+    page = doc.load_page(page_num)
+    pix = page.get_pixmap(matrix=rotation_matrix)  # 이미지 크기 조정 적용
+    pix.set_dpi(pix.width, pix.height)
+    image_bytes = pix.tobytes("png")
+    cols[idx].image(image_bytes, caption=f"Page {page_num + 1}", use_column_width=True)
+
+
+with FOLDER.get_download_stream(os.path.join("/", pdf_name)) as f:
+    data = f.read()
+    st.download_button(label = 'File Download', data = data, file_name = pdf_name, mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        
